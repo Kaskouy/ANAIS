@@ -15,7 +15,7 @@ namespace ANAIS
         const string C_STR_MOD_NAME = "ANAIS";
         const string C_STR_AUTHOR = "Altaïr";
         const string C_STR_GAME_VERSION = "1.5.9.8";
-        const string C_STR_MOD_VERSION = "v0.9";
+        const string C_STR_MOD_VERSION = "v1.0";
         const string C_STR_MOD_DESCRIPTION = "Advanced NAvigation Innovative System\nReplaces the original navigation system with a more elaborated one.";
 
         private const string C_STR_CLOSEST_APPROACH_LINE_MOD_ID = "CLOSEST_APPROACH_LINE";
@@ -37,7 +37,7 @@ namespace ANAIS
         // Set the dependencies
         public override Dictionary<string, string> Dependencies { get; } = new Dictionary<string, string> { { "UITools", "1.0" } };
 
-        public Dictionary<string, FilePath> UpdatableFiles => new Dictionary<string, FilePath> { { ""/*"https://github.com/Neptune-Sky/SFSBuildSettings/releases/latest/download/BuildSettings.dll"*/, new FolderPath(ModFolder).ExtendToFile("ANAIS.dll") } };
+        public Dictionary<string, FilePath> UpdatableFiles => new Dictionary<string, FilePath> { { "https://github.com/Kaskouy/ANAIS/releases/latest/download/ANAIS.dll", new FolderPath(ModFolder).ExtendToFile("ANAIS.dll") } };
 
         public Main() : base()
         {
