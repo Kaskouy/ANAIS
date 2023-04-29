@@ -1025,6 +1025,67 @@ public class ClosestApproachCalculator
         }
 	}
 
+	private static void calculateBestApproachOverSeveralTurnsAtNode(Orbit orbit_A, Orbit orbit_B, double start_time, double nodeArg, uint nbMaxTurns, uint preferredNbTurns, out T_ApproachData bestApproachData, out uint nbTurns)
+    {
+		// Initialization
+		bestApproachData = new T_ApproachData();
+		bestApproachData.validity = false;
+		nbTurns = 0;
+
+		// Declaration of variables for cost calculation
+		// Each calculated approach will be associated to a cost, and the approach with the lower cost will be considered the most suitable.
+		// The cost takes into account the distance found and the number of turns ahead. It's compound of a time cost, proportional to the number of turns
+		// in order to discourage high number of turns, and a deltaV cost equal to dist / nbTurns in order to encourage low delta-V transfers
+		const double COST_PER_NB_OF_TURNS_ANGLE = 1.0 * Math.PI / 180.0; // 1 degree
+		double costPerNbOfTurns = orbit_A.GetRadiusAtAngle(nodeArg) * COST_PER_NB_OF_TURNS_ANGLE;
+
+		double timeCost = 2.0 * costPerNbOfTurns;
+		double currentCost = 0.0;
+		double bestCost = 0.0;
+
+		// A bonus is applied to the memorized number of turns to avoid switching too much between equivalent transfers in terms of cost
+		const double PREFERRED_NB_TURNS_MULTIPLICATOR = 0.85;
+
+		double curStartTime = start_time + orbit_A.period; // to start after one period
+		bool continueSearch = true;
+
+		for (uint i_turn = 2; continueSearch && (i_turn <= nbMaxTurns); i_turn++)
+		{
+			T_ApproachData curApproachData = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, nodeArg);
+
+			// Calculate the cost associated to this approach
+			currentCost = timeCost + curApproachData.dist / i_turn;
+
+			LOG(LOG_LEVEL.DEBUG, "  Approach at turn " + i_turn + ": dist = " + curApproachData.dist + "; time cost = " + timeCost + "; DV cost = " + (curApproachData.dist / i_turn) + "; total cost = " + currentCost);
+
+			if (i_turn == preferredNbTurns)
+            {
+				currentCost *= PREFERRED_NB_TURNS_MULTIPLICATOR;
+				LOG(LOG_LEVEL.DEBUG, "  Turn " + i_turn + " is preferred --> total cost = " + currentCost);
+			}
+
+			// Memorize the approach if it's the best found until now (i.e. associated to the lowest cost)
+			if ((i_turn == 2) || (currentCost < bestCost))
+			{
+				nbTurns = i_turn;
+				bestApproachData = curApproachData;
+				bestCost = currentCost;
+			}
+
+			// Update variables for next loop
+			curStartTime += orbit_A.period; // increase the start time by one period to consider the next turn
+			timeCost += costPerNbOfTurns;   // increase the time cost by one "unit" of cost per turn
+
+			// If we have no more chances of finding a best cost, stop there (based on the time cost, without forgetting to loop at least until we've evaluated the preferred number of turns)
+			if ((timeCost > bestCost) && (i_turn >= preferredNbTurns))
+            {
+				continueSearch = false;
+            }
+		}
+
+		LOG(LOG_LEVEL.DEBUG, "  Turn " + nbTurns + " is the best: total cost = " + bestCost);
+	}
+
 	public static void CalculateClosestApproach_MultiTurn(Orbit orbit_A, Orbit orbit_B, T_ApproachData closestApproach, out T_ApproachData bestApproachData1, out uint nbTurns1, out T_ApproachData bestApproachData2, out uint nbTurns2)
     {
 		if (!approachDataNeedsRecalculation_MultiTurn())
@@ -1101,140 +1162,61 @@ public class ClosestApproachCalculator
 		double distanceMin1 = orbit_A.GetRadiusAtAngle(angleIntersection1) * ANGLE_THRESHOLD;
 		double distanceMin2 = orbit_A.GetRadiusAtAngle(angleIntersection2) * ANGLE_THRESHOLD;
 
-		// Reuse the previously memorized calculation for node 1 if still valid
-		// --------------------------------------------------------------------
-		if(calculateApproach1 && nbMemorizedTurnsOnNode1_validity)
-        {
-			// Calculate the start time from the right number of periods ahead
-			curStartTime = start_time + (nbMemorizedTurnsOnNode1 - 1) * orbit_A.period;
-
-			if (curStartTime > timeMemorizedArrivalAtNode1)
-			{
-				resetNbOfMemorizedTurnsOnNode1(); // We've passed the node, the data is no longer valid
-			}
-			else
-            {
-				// Calculate the approach at node
-				nbTurns1 = nbMemorizedTurnsOnNode1;
-				bestApproachData1 = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, angleIntersection1);
-				calculateApproach1 = false; // to skip the full calculation
-
-				// Memorize that number of turns to reuse it on the next iterations
-				// (it's necessary to memorize it again because the player orbit could have changed and in this case the date changed too)
-				setNbOfMemorizedTurnsOnNode1(nbTurns1, bestApproachData1.date);
-			}
-		}
+		
 
 		// Calculate approach at node 1 on each turn and memorize the best (if calculation needed)
 		// ---------------------------------------------------------------
 		if (calculateApproach1)
         {
-			curStartTime = start_time + orbit_A.period; // to start after one period
-
-			for (uint i_turn = 2; calculateApproach1 && (i_turn <= NB_MAX_TURNS); i_turn++)
+			// If we just passed the node, the preferred number of turns must be decreased so that it corresponds to what we actually memorized
+			if(nbMemorizedTurnsOnNode1_validity && (start_time + (nbMemorizedTurnsOnNode1-1) * orbit_A.period > timeMemorizedArrivalAtNode1) )
 			{
-				T_ApproachData curApproachData1 = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, angleIntersection1);
-
-				if (i_turn == 2)
-				{
-					// first iteration
-					nbTurns1 = i_turn;
-					weightedBestApproach1 = Math.Sqrt(i_turn) * curApproachData1.dist;
-					bestApproachData1 = curApproachData1;
-
-					// If the distance found is lower than a threshold (dependant on number of turns), then stop there
-					if (bestApproachData1.dist < nbTurns1 * distanceMin1) calculateApproach1 = false;
-				}
-				else
-				{
-					double cur_weightedBestApproach1 = Math.Sqrt(i_turn) * curApproachData1.dist;
-
-					if (cur_weightedBestApproach1 < weightedBestApproach1)
-					{
-						weightedBestApproach1 = cur_weightedBestApproach1;
-						nbTurns1 = i_turn;
-						bestApproachData1 = curApproachData1;
-
-						// If the distance found is lower than a threshold (dependant on number of turns), then stop there
-						if (bestApproachData1.dist < nbTurns1 * distanceMin1) calculateApproach1 = false;
-					}
-				}
-
-				// For next loop: search for the next revolution
-				curStartTime += orbit_A.period;
+				nbMemorizedTurnsOnNode1--;
+				LOG(LOG_LEVEL.INFO, " Node 1: passed the node, preferred number of turns is now " + nbMemorizedTurnsOnNode1);
 			}
 
-			// Memorize that number of turns to reuse it on the next iterations
-			setNbOfMemorizedTurnsOnNode1(nbTurns1, bestApproachData1.date);
-		}
-
-
-
-		// Reuse the previously memorized calculation for node 2 if still valid
-		// --------------------------------------------------------------------
-		if (calculateApproach2 && nbMemorizedTurnsOnNode2_validity)
-		{
-			// Calculate the start time from the right number of periods ahead
-			curStartTime = start_time + (nbMemorizedTurnsOnNode2 - 1) * orbit_A.period;
-
-			if (curStartTime > timeMemorizedArrivalAtNode2)
-			{
-				resetNbOfMemorizedTurnsOnNode2(); // We've passed the node, the data is no longer valid
+			LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - preferred nb turns = " + nbMemorizedTurnsOnNode1);
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection1, NB_MAX_TURNS, nbMemorizedTurnsOnNode1, out bestApproachData1, out nbTurns1);
+			
+			if(bestApproachData1.validity)
+            {
+				// Memorize that number of turns to reuse it on the next iterations
+				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - nb turns = " + nbTurns1);
+				setNbOfMemorizedTurnsOnNode1(nbTurns1, bestApproachData1.date);
 			}
 			else
-			{
-				// Calculate the approach at node
-				nbTurns2 = nbMemorizedTurnsOnNode2;
-				bestApproachData2 = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, angleIntersection2);
-				calculateApproach2 = false; // to skip the full calculation
-
-				// Memorize that number of turns to reuse it on the next iterations
-				// (it's necessary to memorize it again because the player orbit could have changed and in this case the date changed too)
-				setNbOfMemorizedTurnsOnNode2(nbTurns2, bestApproachData2.date);
+            {
+				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - Calculation failed, reset best nb of turns ");
+				resetNbOfMemorizedTurnsOnNode1();
 			}
 		}
+
 
 		// Calculate approach at node 2 on each turn and memorize the best (if calculation needed)
 		// ---------------------------------------------------------------
 		if (calculateApproach2)
 		{
-			curStartTime = start_time + orbit_A.period; // to start after one period
-
-			for (uint i_turn = 2; calculateApproach2 && (i_turn <= NB_MAX_TURNS); i_turn++)
+			// If we just passed the node, the preferred number of turns must be decreased so that it corresponds to what we actually memorized
+			if (nbMemorizedTurnsOnNode2_validity && (start_time + (nbMemorizedTurnsOnNode2 - 1) * orbit_A.period > timeMemorizedArrivalAtNode2))
 			{
-				T_ApproachData curApproachData2 = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, angleIntersection2);
-
-				if (i_turn == 2)
-				{
-					// first iteration
-					nbTurns2 = i_turn;
-					weightedBestApproach2 = Math.Sqrt(i_turn) * curApproachData2.dist;
-					bestApproachData2 = curApproachData2;
-
-					// If the distance found is lower than a threshold (dependant on number of turns), then stop there
-					if (bestApproachData2.dist < nbTurns2 * distanceMin2) calculateApproach2 = false;
-				}
-				else
-				{
-					double cur_weightedBestApproach2 = Math.Sqrt(i_turn) * curApproachData2.dist;
-
-					if (cur_weightedBestApproach2 < weightedBestApproach2)
-					{
-						weightedBestApproach2 = cur_weightedBestApproach2;
-						nbTurns2 = i_turn;
-						bestApproachData2 = curApproachData2;
-
-						// If the distance found is lower than a threshold (dependant on number of turns), then stop there
-						if (bestApproachData2.dist < nbTurns2 * distanceMin2) calculateApproach2 = false;
-					}
-				}
-
-				// For next loop: search for the next revolution
-				curStartTime += orbit_A.period;
+				nbMemorizedTurnsOnNode2--;
+				LOG(LOG_LEVEL.INFO, " Node 2: passed the node, preferred number of turns is now " + nbMemorizedTurnsOnNode2);
 			}
 
-			// Memorize that number of turns to reuse it on the next iterations
-			setNbOfMemorizedTurnsOnNode2(nbTurns2, bestApproachData2.date);
+			LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - preferred nb turns = " + nbMemorizedTurnsOnNode2);
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection2, NB_MAX_TURNS, nbMemorizedTurnsOnNode2, out bestApproachData2, out nbTurns2);
+
+			if (bestApproachData2.validity)
+			{
+				// Memorize that number of turns to reuse it on the next iterations
+				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - nb turns = " + nbTurns2);
+				setNbOfMemorizedTurnsOnNode2(nbTurns2, bestApproachData2.date);
+			}
+			else
+			{
+				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - Calculation failed, reset best nb of turns ");
+				resetNbOfMemorizedTurnsOnNode2();
+			}
 		}
 		
 
