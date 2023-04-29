@@ -290,6 +290,12 @@ public class MapNavigation_Patch
 				Drawing_Utils.DrawDashedLine(playerOrbit, approachData_multi2.locPlayer, approachData_multi2.locTarget, lightGreen, null, closestApproachText);
 			}
 		}
+		else
+        {
+			// Reset memorized number of turns
+			ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode1();
+			ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode2();
+		}
 
 		return false;
 	}
