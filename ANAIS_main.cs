@@ -15,7 +15,7 @@ namespace ANAIS
         const string C_STR_MOD_NAME = "ANAIS";
         const string C_STR_AUTHOR = "Altaïr";
         const string C_STR_GAME_VERSION = "1.5.9.8";
-        const string C_STR_MOD_VERSION = "v1.0";
+        const string C_STR_MOD_VERSION = "v1.0.1";
         const string C_STR_MOD_DESCRIPTION = "Advanced NAvigation Innovative System\nReplaces the original navigation system with a more elaborated one.";
 
         private const string C_STR_CLOSEST_APPROACH_LINE_MOD_ID = "CLOSEST_APPROACH_LINE";
