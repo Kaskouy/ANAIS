@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Runtime.CompilerServices;
+using System.Diagnostics;
 
 using SFS.World;
 using SFS.WorldBase;
+using SFS.World.Maps;
 
 class AnaisTransferCalculator
 {
@@ -58,12 +59,10 @@ class AnaisTransferCalculator
 
     
 
-    public static bool computeTimeRangeAroundTimeOfArrival(Orbit playerOrbit, Orbit targetOrbit, double arrivalDate, double playerArg, out double startTime, out double endTime)
+    public static bool computeTimeRangeAroundTimeOfArrival(Orbit playerOrbit, Orbit targetOrbit, double timeNow, double arrivalDate, double playerArg, out double startTime, out double endTime)
     {
         const double C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG = 0.001; // radians - approximately 3 minutes of arc; we'll always make sure to never calculate a rectilinear transfer
         const double C_MIN_DELAY_BEYOND_START_TIME = 60.0;
-
-        double timeNow = WorldTime.main.worldTime;
 
         startTime = targetOrbit.GetLastAnglePassTime(arrivalDate, playerArg + C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction);
         endTime   = targetOrbit.GetNextAnglePassTime(arrivalDate, playerArg - C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction);
@@ -89,11 +88,10 @@ class AnaisTransferCalculator
 
 
 
-    private static bool computeTimeRangeForAnaisTransferCalculation(Orbit playerOrbit, Orbit targetOrbit, out double startTime, out double endTime)
+    private static bool computeTimeRangeForAnaisTransferCalculation(Orbit playerOrbit, Orbit targetOrbit, double timeNow, out double startTime, out double endTime)
     {
         startTime = endTime = 0.0;
 
-        double timeNow = WorldTime.main.worldTime;
         Location playerLocationNow = playerOrbit.GetLocation(timeNow);
         double playerArg = playerLocationNow.position.AngleRadians;
 
@@ -161,7 +159,7 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "Best passage time of target = " + bestTimeOfPassageTarget);
 
             // Compute a time range around the best time of passage
-            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, bestTimeOfPassageTarget, playerArg, out startTime, out endTime);
+            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, bestTimeOfPassageTarget, playerArg, out startTime, out endTime);
         }
         else
         {
@@ -188,7 +186,7 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "  Closest passage time of target at ref point = " + timeOfTargetPassageAtRefPoint + " (orbital period = " + targetOrbit.period + ")");
 
             // Compute a time range around the best time of passage
-            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeOfTargetPassageAtRefPoint, playerArg, out startTime, out endTime);
+            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, timeOfTargetPassageAtRefPoint, playerArg, out startTime, out endTime);
         }
     }
 
@@ -431,11 +429,20 @@ class AnaisTransferCalculator
 
     // MAIN FUNCTION
     // -------------
-    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet)
+    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double timeNow)
     {
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
         LOG(LOG_LEVEL.DEBUG, "---   NEW ANAIS TRANSFER CALCULATION    ---");
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
+
+        if(playerOrbit == null)
+        {
+            LOG(LOG_LEVEL.DEBUG, "player orbit is null");
+        }
+        else if (playerOrbit.Planet == null)
+        {
+            LOG(LOG_LEVEL.DEBUG, "player orbit has no planet");
+        }
 
         // Deal with the return to mother planet case first
         if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))
@@ -443,7 +450,7 @@ class AnaisTransferCalculator
             // Return to mother planet
             AnaisTransfer anaisReturnTransfer = new AnaisTransfer(playerOrbit, null, targetPlanet); // No destination orbit in this case
 
-            anaisReturnTransfer.calculateReturnToPlanet(WorldTime.main.worldTime);
+            anaisReturnTransfer.calculateReturnToPlanet(timeNow);
 
             return anaisReturnTransfer;
         }
@@ -451,11 +458,11 @@ class AnaisTransferCalculator
         // Now deal with actual transfer if necessary
         if (_isMemorizedArrivalTimeValid)
         {
-            if(_memorizedArrivalTimeForTransfer > WorldTime.main.worldTime + 60.0)
+            if(_memorizedArrivalTimeForTransfer > timeNow + 60.0)
             {
                 // calculate the transfer for that arrival time
                 AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
-                anaisTransfer.calculateTransfer(WorldTime.main.worldTime, _memorizedArrivalTimeForTransfer);
+                anaisTransfer.calculateTransfer(timeNow, _memorizedArrivalTimeForTransfer);
 
                 if (anaisTransfer.isValid() && anaisTransfer.dv_start < C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_RESET)
                 {
@@ -495,7 +502,7 @@ class AnaisTransferCalculator
 
 
         double startTime, endTime;
-        bool timeRangeValid = computeTimeRangeForAnaisTransferCalculation(startOrbit, endOrbit, out startTime, out endTime);
+        bool timeRangeValid = computeTimeRangeForAnaisTransferCalculation(startOrbit, endOrbit, timeNow, out startTime, out endTime);
 
         if (!timeRangeValid)
         {
@@ -505,7 +512,7 @@ class AnaisTransferCalculator
 
         // Calculate the optimal transfer on that time range
         // -------------------------------------------------
-        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, WorldTime.main.worldTime, startTime, endTime);
+        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, timeNow, startTime, endTime);
 
         if( (newAnaisTransfer != null) && newAnaisTransfer.isValid() && (newAnaisTransfer.dv_start < C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_MEMORIZATION))
         {
@@ -516,12 +523,103 @@ class AnaisTransferCalculator
     }
 
 
+    public static void CalculateInputData(MapPlayer mapPlayer, SelectableObject target)
+    {
+        // Both player and target must be defined
+        if((mapPlayer == null) || (target == null))
+        {
+            return;
+        }
+
+        // If target is a planet, memorize it
+        Planet targetPlanet = null;
+        {
+            MapPlanet targetMapPlanet = target as MapPlanet;
+            if (targetMapPlanet != null) targetPlanet = targetMapPlanet.planet;
+        }
+
+        // Retrieve orbits list
+        List<Orbit> listPlayerOrbits = GetListOrbits(mapPlayer.Trajectory);
+        List<Orbit> listTargetOrbits = GetListOrbits(target.Trajectory);
+
+        // Retrieve current player orbit
+        Orbit playerOrbit = null;
+
+        if(listPlayerOrbits.Count > 0)
+        {
+            playerOrbit = listPlayerOrbits[0];
+        }
+        else
+        {
+            // Player is stationary or on a rectilinear orbit; we'll use a fictive circular orbit for the time range estimations
+            double radius = mapPlayer.Location.Radius;
+            playerOrbit = Orbit_Utils.CreateOrbit(radius, 0.0, 0.0, /*direction*/-1, mapPlayer.Location.planet, PathType.Eternal, null);
+
+            if (playerOrbit == null) return; // Just in case... If object is stuck in the center of a planet because of a bug for example.
+        }
+
+        // Evaluate configuration
+        if((targetPlanet != null) && ((targetPlanet == playerOrbit.Planet) || (targetPlanet == playerOrbit.Planet.parentBody)) )
+        {
+            // Return to mother planet configuration (or gravity assist: we are making a fly-by of the planet we are currently targeting)
+            LOG(LOG_LEVEL.INFO, "CalculateInputData: Return to mother planet configuration detected");
+        }
+        else
+        {
+            // Define target orbit
+            Orbit targetOrbit = null;
+
+            if(listTargetOrbits.Count > 0)
+            {
+                targetOrbit = listTargetOrbits[0];
+            }
+            else
+            {
+                // Target is not on an orbital trajectory - Nothing we can do
+                return;
+            }
+
+            // Evaluate transfer configuration
+            if(playerOrbit.Planet == targetOrbit.Planet)
+            {
+                // Local transfer (player and target orbit the same body)
+                LOG(LOG_LEVEL.INFO, "CalculateInputData: Local transfer configuration detected");
+            }
+            else if(playerOrbit.Planet.parentBody == targetOrbit.Planet)
+            {
+                // Interplanetary transfer (player has to exit a SOI to encounter the target)
+                LOG(LOG_LEVEL.INFO, "CalculateInputData: Interplanetary transfer configuration detected");
+            }
+            else
+            {
+                // Not managed: any other situation
+            }
+        }
+    }
+
+    private static List<Orbit> GetListOrbits(Trajectory a)
+    {
+        List<Orbit> orbitList = new List<Orbit>();
+
+        for(int i = 0; i < a.paths.Count; i++)
+        {
+            if(a.paths[i] is Orbit orbit)
+            {
+                orbitList.Add(orbit);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return orbitList;
+    }
+
     // Local log function
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [Conditional("ACTIVE_LOGS")]
     private static void LOG(LOG_LEVEL level, string message)
     {
-#if ACTIVE_LOGS
         AnaisLogger.Log(LOG_CATEGORY.ANAIS_TRANSFER_CALCULATOR, level, message);
-#endif
     }
 }

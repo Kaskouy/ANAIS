@@ -1,9 +1,9 @@
-﻿using System.Runtime.CompilerServices;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using SFS.World;
 using SFS.WorldBase;
@@ -429,6 +429,7 @@ class AnaisTransfer
 
     public void calculateReturnToPlanet(double departureTime_)
     {
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet called");
         if (originOrbit == null) return;
 
         Orbit mainOrbit = null;
@@ -442,10 +443,12 @@ class AnaisTransfer
         }
         else if(originOrbit.Planet == targetPlanet)
         {
+            LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: Return to mother planet needed");
             mainOrbit = originOrbit;
         }
         else if(originOrbit.Planet.parentBody == targetPlanet)
         {
+            LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: Return to mother planet needed with escape trajectory");
             mainOrbit = originOrbit.Planet.orbit;
         }
         else
@@ -455,10 +458,12 @@ class AnaisTransfer
         }
 
         // The radius we will target for the destination
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating stuff");
         double targetRadius = targetPlanet.TimewarpRadius_Descend;
         double targetOrbitalSpeed = Math.Sqrt(targetPlanet.mass / targetRadius);
 
         // The target orbit: a perfectly circular orbit 
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: creating orbit");
         Orbit targetOrbit = Orbit_Utils.CreateOrbit(targetRadius, 0.0, 0.0, mainOrbit.direction, mainOrbit.Planet, PathType.Eternal, null);
 
         if(targetOrbit == null)
@@ -466,9 +471,11 @@ class AnaisTransfer
             return; // the risk is purely theoretical actually...
         }
 
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating location");
         Location startMainLocation = mainOrbit.GetLocation(departureTime);
 
         // Calculate the Hohmann transfer as the return trajectory
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating Hohmann transfer");
         Orbit_Utils.CalculateHohmannTransfer(mainOrbit, targetOrbit, startMainLocation, out transferOrbit, out double _);
 
         if(transferOrbit == null)
@@ -590,11 +597,9 @@ class AnaisTransfer
     }
 
     // Local log function
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [Conditional("ACTIVE_LOGS")]
     private static void LOG(LOG_LEVEL level, string message)
     {
-#if ACTIVE_LOGS
         AnaisLogger.Log(LOG_CATEGORY.ANAIS_TRANSFER, level, message);
-#endif
     }
 }

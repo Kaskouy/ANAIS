@@ -1,9 +1,9 @@
-﻿using System.Runtime.CompilerServices;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using HarmonyLib;
 
@@ -224,11 +224,9 @@ class NumericalMinimumCalculator
     }
 
     // Local log function
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [Conditional("ACTIVE_LOGS")]
     private static void LOG(LOG_LEVEL level, string message)
     {
-#if ACTIVE_LOGS
         AnaisLogger.Log(LOG_CATEGORY.NUMERICAL_MINI_CALCULATOR, level, message);
-#endif
     }
 }
