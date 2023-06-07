@@ -1,15 +1,15 @@
-﻿using System.Runtime.CompilerServices;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using SFS.World;
 using SFS.WorldBase;
+using SFS.World.PlanetModules;
 
-
-class Orbit_Utils
+static class Orbit_Utils
 {
 	// The minimal value the slr shall have to ensure the orbit is not rectilinear (or practically)
 	public const double C_MINIMAL_ORBIT_SLR = 0.001;
@@ -22,12 +22,14 @@ class Orbit_Utils
 		return angle;
 	}
 
+	// Deprecated: use orbit.getSpecificEnergy() instead
 	public static double GetSpecificEnergy(Orbit orbit)
 	{
 		double specificEnergy = orbit.Planet.mass * (orbit.ecc * orbit.ecc - 1.0) / (2.0 * orbit.slr);
 		return specificEnergy;
 	}
 
+	// Deprecated: use orbit.getAngularMomentum() instead
 	public static double GetAngularMomentum(Orbit orbit)
 	{
 		double angularMomentum = Math.Sqrt(orbit.Planet.mass * orbit.slr) * orbit.direction;
@@ -40,14 +42,86 @@ class Orbit_Utils
 
 		if (slr < C_MINIMAL_ORBIT_SLR)
 		{
-#if ACTIVE_LOGS
 			AnaisLogger.Log(LOG_CATEGORY.ORBIT, LOG_LEVEL.INFO, "Custom orbit creation aborted - it would be rectilinear (slr = " + slr + ")");
-#endif
 			return null; // The orbit would be rectilinear
 		}
 
 		return new Orbit(slr, ecc, argOfPeriapsis, direction, planet, pathType, nextPlanet);
 	}
+
+	public static Orbit Clone(this Orbit orbit, Planet parentPlanet)
+    {
+		Orbit_OrbitConstructor2_Patch.orbitToCopy = orbit;
+
+		// Only the 3 last parameters are important
+		LOG(LOG_LEVEL.DEBUG, "Clone called");
+		return new Orbit(0.0, 0.0, 0.0, 0, parentPlanet, orbit.pathType, null);
+    }
+
+	public static Planet Clone(this Planet planet, UnityEngine.GameObject gameObject)
+    {
+		Planet newPlanet = gameObject.AddComponent<Planet>();
+
+		// Copy the useful fields from original planet
+		//newPlanet.codeName = planet.codeName;
+		newPlanet.mass = planet.mass;
+		newPlanet.SOI = planet.SOI;
+		newPlanet.maxTerrainHeight = planet.maxTerrainHeight;
+
+		// To be assigned manually by the caller if needed
+		newPlanet.orbit = null;
+		newPlanet.parentBody = null;
+
+		// Initialize all the rest to null/0 by safety
+		newPlanet.trajectory = null;
+		newPlanet.mapHolder = null;
+		newPlanet.mapPlanet = null;
+		newPlanet.landmarks = null;
+		newPlanet.satellites = null;
+		newPlanet.planetTexture = null;
+		newPlanet.terrainMaterial = null;
+		newPlanet.atmosphereMaterial = null;
+		newPlanet.orbitalDepth = 0;
+		newPlanet.satelliteIndex = 0;
+
+		// Planet data
+		newPlanet.data = new PlanetData();
+
+		// Copy the useful fields from original planet data (basics)
+		newPlanet.data.basics = new BasicModule();
+		newPlanet.data.basics.radius = planet.data.basics.radius;
+		newPlanet.data.basics.gravity = planet.data.basics.gravity;
+		newPlanet.data.basics.timewarpHeight = planet.data.basics.timewarpHeight;
+
+		// Copy the useful fields from original planet data (atmospherePhysics)
+		newPlanet.data.hasAtmospherePhysics = planet.data.hasAtmospherePhysics;
+		if (planet.data.hasAtmospherePhysics)
+		{
+			newPlanet.data.atmospherePhysics = new Atmosphere_Physics();
+			newPlanet.data.atmospherePhysics.height = planet.data.atmospherePhysics.height;
+			newPlanet.data.atmospherePhysics.density = planet.data.atmospherePhysics.density;
+			newPlanet.data.atmospherePhysics.curve = planet.data.atmospherePhysics.curve;
+			newPlanet.data.atmospherePhysics.parachuteMultiplier = planet.data.atmospherePhysics.parachuteMultiplier;
+			newPlanet.data.atmospherePhysics.upperAtmosphere = planet.data.atmospherePhysics.upperAtmosphere;
+		}
+        else
+        {
+			newPlanet.data.atmospherePhysics = null;
+		}
+
+		// Initialize the rest to invalid data
+		newPlanet.data.hasAtmosphereVisuals = false;
+		newPlanet.data.atmosphereVisuals = null;
+		newPlanet.data.hasTerrain = false;
+		newPlanet.data.terrain = null;
+		newPlanet.data.hasPostProcessing = false;
+		newPlanet.data.postProcessing = null;
+		newPlanet.data.hasOrbit = false;
+		newPlanet.data.orbit = null;
+		newPlanet.data.landmarks = null;
+
+		return newPlanet;
+    }
 
 	public static bool GetIntersectionAngles(Orbit orbit1, Orbit orbit2, out double angleA, out double angleB)
     {
@@ -209,7 +283,7 @@ class Orbit_Utils
 
 		// Set periapsis passage time
 		double timeFromPeri = 0.0;
-		KeplerSolver.GetTimeAtPosition(thePlanet.mass, hohmannTransfer.periapsis, specificEnergy, R1, arg_start - hohmannTransfer.arg, ref timeFromPeri);
+		new KeplerSolver(thePlanet.mass, hohmannTransfer.periapsis, specificEnergy).GetTimeAtPosition(R1, arg_start - hohmannTransfer.arg, ref timeFromPeri);
 		hohmannTransfer.periapsisPassageTime = location_from.time - timeFromPeri * (double)hohmannTransfer.direction - 10.0 * hohmannTransfer.period;
 
 		// Set start and end time
@@ -224,12 +298,29 @@ class Orbit_Utils
 		}
 	}
 
+	public static List<Orbit> GetListOrbits(Trajectory a)
+	{
+		List<Orbit> orbitList = new List<Orbit>();
+
+		for (int i = 0; i < a.paths.Count; i++)
+		{
+			if (a.paths[i] is Orbit orbit)
+			{
+				orbitList.Add(orbit);
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		return orbitList;
+	}
+
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.HOHMANN_TRANSFER, level, message);
-#endif
 	}
 }

@@ -189,7 +189,7 @@ public static class LambertSolver
         if(!periapsisPassageTimeValid)
         {
             double timeFromPeri = 0.0;
-            KeplerSolver.GetTimeAtPosition(mu, slr/(1.0+ecc), specificEnergy, R1, direction*(arg1 - argOfPeriapsis), ref timeFromPeri);
+            new KeplerSolver(mu, slr / (1.0 + ecc), specificEnergy).GetTimeAtPosition(R1, direction*(arg1 - argOfPeriapsis), ref timeFromPeri);
             periapsisPassageTime = T1 - timeFromPeri;
         }
     }

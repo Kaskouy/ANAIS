@@ -1,9 +1,9 @@
-﻿using System.Runtime.CompilerServices;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using SFS.World;
 using SFS.WorldBase;
@@ -84,7 +84,7 @@ class EjectionTrajectoryCalculator
         {
             // Set periapsis passage time
             double timeFromPeri = 0.0;
-            KeplerSolver.GetTimeAtPosition(planet.mass, orbit.periapsis, Orbit_Utils.GetSpecificEnergy(orbit), startRadius, startArg - orbit.arg, ref timeFromPeri);
+            new KeplerSolver(planet.mass, orbit.periapsis, orbit.getSpecificEnergy()).GetTimeAtPosition(startRadius, startArg - orbit.arg, ref timeFromPeri);
             orbit.periapsisPassageTime = startTime - timeFromPeri * (double)direction - 10.0 * orbit.period;
 
             // Set start and end time
@@ -161,11 +161,9 @@ class EjectionTrajectoryCalculator
     }
 
     // Local log function
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [Conditional("ACTIVE_LOGS")]
     private static void LOG(LOG_LEVEL level, string message)
     {
-#if ACTIVE_LOGS
         AnaisLogger.Log(LOG_CATEGORY.EJECTION_TRAJECTORY, level, message);
-#endif
     }
 }

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-public static class KeplerSolver
+public class KeplerSolver
 {
     // The precision for a value calculated with the quasi-parabolic equation will be like C_QUASI_PARABOLIC_THRESHOLD to the power C_NB_TERMS_QUASI_PARABOLIC_EQUATION
     // Raising the threshold allows to use it in more situations, but it will force to raise the number of terms to keep an equal precision, which also means more calculations.
@@ -21,13 +21,25 @@ public static class KeplerSolver
 
     // INTERNAL VARIABLES
     // ------------------
-    private static double mu;    // gravitational parameter
-    private static double peri;  // periapsis
-    private static double K;     // specific energy (= v^2/2 - mu/r)
-    private static double ecc;   // eccentricity
-    private static double gamma; // coeff gamma = (g_ecc - 1) / (g_ecc + 1) - used in quasi-parabolic calculations
-    private static double omega; // coeff omega = K / (mu + peri * K) - used in quasi-parabolic calculations
+    private double mu;    // gravitational parameter
+    private double peri;  // periapsis
+    private double K;     // specific energy (= v^2/2 - mu/r)
+    private double ecc;   // eccentricity
+    private double gamma; // coeff gamma = (ecc - 1) / (ecc + 1) - used in quasi-parabolic calculations
+    private double omega; // coeff omega = K / (mu + peri * K) - used in quasi-parabolic calculations
 
+	// CONSTRUCTOR
+	// -----------
+	public KeplerSolver(double p_mu, double p_peri, double p_K)
+    {
+		// Calculate internal variables
+		mu = p_mu;
+		peri = p_peri;
+		K = p_K;
+		ecc = 1.0 + 2.0 * peri * K / mu;
+		omega = K / (mu + peri * K);
+		gamma = peri * omega;
+	}
 
 	// ------------------------
 	// METHOD GetTimeAtPosition
@@ -43,16 +55,8 @@ public static class KeplerSolver
 	// - trueAnomaly    : argument measured from periapsis at current position (arg - arg_of_periapsis)
 	// - time_from_peri : the date calculated. Add the time at periapsis to get the absolute time.
 	// ------------------------
-	public static void GetTimeAtPosition(double p_mu, double p_peri, double p_K, double radius, double trueAnomaly, ref double time_from_peri)
+	public void GetTimeAtPosition(double radius, double trueAnomaly, ref double time_from_peri)
 	{
-		// Calculate internal variables
-		mu = p_mu;
-		peri = p_peri;
-		K = p_K;
-		ecc = 1.0 + 2.0 * peri * K / mu;
-		omega = K / (mu + peri * K);
-		// gamma will be calculated in the quasi-parabolic method if needed
-
 		// Make sure we work with an angle included in [-Pi, +Pi]
 		double trueAnomaly_normalized = trueAnomaly;
 		while (trueAnomaly_normalized >  Math.PI) { trueAnomaly_normalized -= 2.0 * Math.PI; }
@@ -93,15 +97,8 @@ public static class KeplerSolver
 	// - radius         : radius at current position
 	// - trueAnomaly    : argument measured from periapsis at current position (in range [-Pi, Pi]). Add arg_of_periapsis to get the argument.
 	// ------------------------
-	public static void GetPositionAtTime(double p_mu, double p_peri, double p_K, double time_from_peri, ref double radius, ref double trueAnomaly)
+	public void GetPositionAtTime(double time_from_peri, ref double radius, ref double trueAnomaly)
 	{
-		mu = p_mu;
-		peri = p_peri;
-		K = p_K;
-		ecc = 1.0 + 2.0 * peri * K / mu;
-		omega = K / (mu + peri * K);
-		gamma = peri * omega;
-
 		/*LogFile.Log("--- GetPositionAtTime  ---");
 		LogFile.Log("  mu              = " + mu);
 		LogFile.Log("  periapsis       = " + peri);
@@ -166,7 +163,7 @@ public static class KeplerSolver
 
 	// METHODS FOR TIME CALCULATION FROM POSITION DATA (the easy part)
 	// -----------------------------------------------
-	private static bool isQuasiParabolicEquationSuitableForTimeCalculation(double radius)
+	private bool isQuasiParabolicEquationSuitableForTimeCalculation(double radius)
 	{
 		if ((ecc > 0.99) && (ecc < 1.01))
 		{
@@ -179,7 +176,7 @@ public static class KeplerSolver
 		return false;
 	}
 
-	private static void GetTimeAtPos_QuasiParabolic(double radius, double trueAnomaly, ref double date)
+	private void GetTimeAtPos_QuasiParabolic(double radius, double trueAnomaly, ref double date)
 	{
 		double gamma = peri * omega; // also equal to (ecc-1)/(ecc+1) but this is faster to calculate that way
 
@@ -217,7 +214,7 @@ public static class KeplerSolver
 		date *= Math.Sqrt(2.0 / (mu + peri * K));
 	}
 
-	private static void GetTimeAtPos_Elliptic(double radius, double trueAnomaly, ref double date)
+	private void GetTimeAtPos_Elliptic(double radius, double trueAnomaly, ref double date)
 	{
 		double E, M; // eccentric anomaly, mean anomaly
 		double cos_E;
@@ -256,7 +253,7 @@ public static class KeplerSolver
 		date = mu * M / (-2.0 * K * Math.Sqrt(-2.0 * K));
 	}
 
-	private static void GetTimeAtPos_Hyperbolic(double radius, double trueAnomaly, ref double date)
+	private void GetTimeAtPos_Hyperbolic(double radius, double trueAnomaly, ref double date)
 	{
 		double H, M; // eccentric anomaly, mean anomaly
 		double cosh_H; // hyperbolic cosine of H
@@ -280,7 +277,7 @@ public static class KeplerSolver
 
 	// METHODS FOR POSITION CALCULATION FROM TIME DATA (the hard part)
 	// -----------------------------------------------
-	private static bool isQuasiParabolicEquationSuitableForPositionCalculation(double time)
+	private bool isQuasiParabolicEquationSuitableForPositionCalculation(double time)
 	{
 		if ((ecc > 0.99) && (ecc < 1.01))
 		{
@@ -296,7 +293,7 @@ public static class KeplerSolver
 		return false;
 	}
 
-	private static void GetPositionAtTime_QuasiParabolic(double time, ref double radius, ref double trueAnomaly)
+	private void GetPositionAtTime_QuasiParabolic(double time, ref double radius, ref double trueAnomaly)
 	{
 		double YVal = Math.Sqrt((mu + peri * K) / 2.0) * time;
 
@@ -386,7 +383,7 @@ public static class KeplerSolver
 		}
 	}
 
-	private static void GetPositionAtTime_Elliptic(double time, ref double radius, ref double trueAnomaly)
+	private void GetPositionAtTime_Elliptic(double time, ref double radius, ref double trueAnomaly)
 	{
 		double meanAnomaly = -2.0 * K * Math.Sqrt(-2.0 * K) / mu * time;
 
@@ -448,7 +445,7 @@ public static class KeplerSolver
 		}
 	}
 
-	private static void GetPositionAtTime_Hyperbolic(double time, ref double radius, ref double trueAnomaly)
+	private void GetPositionAtTime_Hyperbolic(double time, ref double radius, ref double trueAnomaly)
 	{
 		double meanAnomaly = 2.0 * K * Math.Sqrt(2.0 * K) / mu * time;
 
@@ -510,7 +507,7 @@ public static class KeplerSolver
 		}
 	}
 
-	private static double GetFirstApproximation_QuasiParabolic(double YVal)
+	private double GetFirstApproximation_QuasiParabolic(double YVal)
 	{
 		// Calculate a first approximation by solving the corresponding grade 3 equation (by neglecting the terms of greater degree)
 		// The equation is under the form x^3 + p.x + q = 0 and is solved by the Cardan method
@@ -525,7 +522,7 @@ public static class KeplerSolver
 		return Q0;
 	}
 
-	private static double GetFirstApproximation_Elliptic(double meanAnomaly)
+	private double GetFirstApproximation_Elliptic(double meanAnomaly)
 	{
 		// The Kepler equation is approximated with 5 linear equations defined on 5 intervals (separated by 4 bounds)
 		// Each bound is computed as "A * eccentricity + B"
@@ -603,7 +600,7 @@ public static class KeplerSolver
 		return E0;
 	}
 
-	private static double GetFirstApproximation_Hyperbolic(double meanAnomaly)
+	private double GetFirstApproximation_Hyperbolic(double meanAnomaly)
 	{
 		double H0;
 		double Y = Math.Abs(meanAnomaly);
