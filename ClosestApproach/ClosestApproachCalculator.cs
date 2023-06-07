@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics;
 
 using SFS.World;
 using System;
@@ -1225,12 +1225,10 @@ public class ClosestApproachCalculator
 
 
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.CLOSEST_APPROACH, level, message);
-#endif
 	}
 
 }
