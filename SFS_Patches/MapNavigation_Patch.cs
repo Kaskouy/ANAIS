@@ -6,6 +6,19 @@ using SFS.WorldBase;
 using SFS.World.Maps;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Diagnostics;
+
+
+
+/*[HarmonyPatch(typeof(Map), "Awake")]
+public class Map_Awake_Patch
+{
+	[HarmonyPostfix]
+	public static void Awake_postfix()
+	{
+		AnaisManager.Awake();
+	}
+}*/
 
 
 // The 2 following patches allow to reset the latest approach data when the player changes the target
@@ -14,39 +27,19 @@ using UnityEngine.UI;
 public class MapNavigation_SetTarget_Patch
 {
 	[HarmonyPostfix]
-	public static void SetTarget_postfix()
+	public static void SetTarget_postfix(MapNavigation __instance)
     {
 		ClosestApproachCalculator.resetLastApproachDataValidity();
 		ClosestApproachCalculator.resetLastApproachDataValidity_MultiTurn();
 		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode1();
 		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode2();
 
-		AnaisTransferCalculator.resetMemorizedTimeOfArrival();
+		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, LOG_LEVEL.INFO, "Detected target set to a new object");
 
-#if ACTIVE_LOGS
-		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, LOG_LEVEL.INFO, "Detected target set to an object");
-#endif
+		/*AnaisManager.notifyNewTarget(__instance.target);*/
 	}
 }
 
-[HarmonyPatch(typeof(MapNavigation), nameof(MapNavigation.ToggleTarget))]
-public class MapNavigation_ToggleTarget_Patch
-{
-	[HarmonyPostfix]
-	public static void ToggleTarget_postfix()
-	{
-		ClosestApproachCalculator.resetLastApproachDataValidity();
-		ClosestApproachCalculator.resetLastApproachDataValidity_MultiTurn();
-		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode1();
-		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode2();
-
-		AnaisTransferCalculator.resetMemorizedTimeOfArrival();
-
-#if ACTIVE_LOGS
-		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, LOG_LEVEL.INFO, "Detected target set to another object");
-#endif
-	}
-}
 
 // This patch allows to reset the latest approach data when the player switches to another ship
 // --------------------------------------------------------------------------------------------
@@ -54,7 +47,7 @@ public class MapNavigation_ToggleTarget_Patch
 public class MapNavigation_OnPlayerChange_Patch
 {
 	[HarmonyPostfix]
-	public static void OnPlayerChange_postfix(Player newPlayer)
+	public static void OnPlayerChange_postfix(MapNavigation __instance, Player newPlayer)
 	{
 		ClosestApproachCalculator.setPlayer(newPlayer);
 		ClosestApproachCalculator.resetLastApproachDataValidity();
@@ -62,11 +55,9 @@ public class MapNavigation_OnPlayerChange_Patch
 		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode1();
 		ClosestApproachCalculator.resetNbOfMemorizedTurnsOnNode2();
 
-		AnaisTransferCalculator.resetMemorizedTimeOfArrival();
+		/*AnaisManager.notifyNewTarget(__instance.target);*/
 
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, LOG_LEVEL.INFO, "Detected control set to another ship");
-#endif
 	}
 }
 
@@ -89,6 +80,14 @@ public class MapNavigation_Patch
 		{
 			return false; // no target
 		}
+
+		// Send input data
+		/*AnaisManager.SetInputData(value.mapPlayer, ___target);
+
+		// Get output data (probably from the previous iteration...)
+		AnaisManager.DrawAnaisTransfer();
+
+		return false;*/
 
 		if ( !GetOrbits(value.mapPlayer.Trajectory, out var list_PlayerOrbits) || !GetOrbits(___target.Trajectory, out var list_targetOrbits) )
 		{
@@ -163,7 +162,11 @@ public class MapNavigation_Patch
             {
 				// Time for ANAIS to shine!
 				// ------------------------
-				AnaisTransfer anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, targetPlanet);
+				Stopwatch stopwatch = Stopwatch.StartNew();
+				AnaisTransfer anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, targetPlanet, WorldTime.main.worldTime);
+				System.TimeSpan timeSpan = stopwatch.Elapsed;
+				System.DateTime timeNow = System.DateTime.Now;
+				LOG(LOG_LEVEL.DEBUG, timeNow.Second + "." + System.String.Format("{0,3:D3}", timeNow.Millisecond) + ": ANAIS calculation took: " + ((double)(timeSpan.Ticks) / System.TimeSpan.TicksPerMillisecond) + " milliseconds");
 
 				if ((anaisTransfer != null) && anaisTransfer.isValid())
 				{
@@ -317,11 +320,9 @@ public class MapNavigation_Patch
 	}
 
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, level, message);
-#endif
 	}
 }

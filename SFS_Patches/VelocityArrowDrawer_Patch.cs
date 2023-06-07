@@ -1,6 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-
-using HarmonyLib;
+﻿using HarmonyLib;
 using SFS.World;
 using SFS.WorldBase;
 using SFS.World.Maps;
@@ -8,6 +6,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using SFS.UI;
 using System;
+using System.Diagnostics;
 
 
 
@@ -200,7 +199,7 @@ class VelocityArrowDrawer_OnLocationChange_Patch
             {
 				Location locationStart = playerOrbit.GetLocation(WorldTime.main.worldTime);
 
-				AnaisTransfer anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, targetPlanet);
+				AnaisTransfer anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, targetPlanet, WorldTime.main.worldTime);
 
 				if ((anaisTransfer != null) && (anaisTransfer.transferOrbit != null))
                 {
@@ -596,12 +595,10 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 	}
 
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.VELOCITY_ARROW, level, message);
-#endif
 	}
 }
 

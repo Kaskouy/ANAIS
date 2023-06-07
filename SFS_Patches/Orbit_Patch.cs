@@ -1,12 +1,86 @@
-﻿using System.Runtime.CompilerServices;
-
-using HarmonyLib;
+﻿using HarmonyLib;
 using SFS.World;
 using SFS.WorldBase;
 using System;
 using UnityEngine;
 
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
+
+// Class Orbit_AdditionalData
+// --------------------------
+// A class that allows to store additional data and associate them to an orbit instance
+public class Orbit_AdditionalData
+{
+	public double specificEnergy;
+	public double angularMomentum;
+	public OrbitDrawer orbitDrawer;
+
+    public Orbit_AdditionalData(double specificEnergy, double angularMomentum, Orbit orbit)
+    {
+        this.specificEnergy = specificEnergy;
+        this.angularMomentum = angularMomentum;
+        this.orbitDrawer = new OrbitDrawer(orbit);
+    }
+}
+
+
+// Class Orbit_AdditionalData_Association
+// --------------------------------------
+// This class maintains a table of association between all orbit instances and their associated data.
+// It also defines some methods to retrieve said data as if they were actual members of the orbit class
+// through the use of extension methods.
+static class Orbit_AdditionalData_Association
+{
+	private static ConditionalWeakTable<Orbit, Orbit_AdditionalData> orbitTable = new ConditionalWeakTable<Orbit, Orbit_AdditionalData>();
+
+	// Backup function that allows to recreate a set of associated data if an association appeared to be lost
+	// This is only used as a backup, it should never happen in practice.
+	private static Orbit_AdditionalData createAdditionalData(Orbit orbit)
+    {
+		LOG(LOG_LEVEL.WARNING, "createAdditionalData: orbit not found in ConditionalWeakTable; added automatically on the go!");
+		return new Orbit_AdditionalData(Orbit_Utils.GetSpecificEnergy(orbit), Orbit_Utils.GetAngularMomentum(orbit), orbit);
+	}
+
+	// Function to add an entry in the table; only meant to be called by the Orbit constructor!
+	public static void addAdditionalData(this Orbit orbit, double specificEnergy, double angularMomentum)
+    {
+		orbitTable.Add(orbit, new Orbit_AdditionalData(specificEnergy, angularMomentum, orbit));
+	}
+
+	// Accessors to the orbit additional data
+	// --------------------------------------
+	public static double getSpecificEnergy(this Orbit orbit)
+    {
+		return orbitTable.GetValue(orbit, createAdditionalData).specificEnergy;
+	}
+
+	public static double getAngularMomentum(this Orbit orbit)
+	{
+		return orbitTable.GetValue(orbit, createAdditionalData).angularMomentum;
+	}
+
+	public static void getSpecificEnergyAndAngularMomentum(this Orbit orbit, out double specificEnergy, out double angularMomentum)
+	{
+		Orbit_AdditionalData orbitData = orbitTable.GetValue(orbit, createAdditionalData);
+		
+		specificEnergy = orbitData.specificEnergy;
+		angularMomentum = orbitData.angularMomentum;
+	}
+
+	public static OrbitDrawer getOrbitDrawer(this Orbit orbit)
+	{
+		return orbitTable.GetValue(orbit, createAdditionalData).orbitDrawer;
+	}
+
+	// Local log function
+	[Conditional("ACTIVE_LOGS")]
+	private static void LOG(LOG_LEVEL level, string message)
+	{
+		AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
+	}
+}
 
 [HarmonyPatch(typeof(Orbit), "TryCreateOrbit")]
 public class Orbit_TryCreateOrbit_Patch
@@ -49,12 +123,10 @@ public class Orbit_TryCreateOrbit_Patch
 	}
 
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
-#endif
 	}
 }
 
@@ -77,6 +149,8 @@ public class Orbit_OrbitPatch
 
 		double specificEnergy = Math.Pow(location.velocity.magnitude, 2.0) / 2.0 - location.planet.mass / location.Radius;
 		double angularMomentum = angularMomentum_vector.z;
+
+		__instance.addAdditionalData(specificEnergy, angularMomentum);
 
 		__instance.ecc = eccentricity_vector.magnitude;
 		__instance.slr = angularMomentum * angularMomentum / location.planet.mass;
@@ -110,7 +184,20 @@ public class Orbit_OrbitPatch
 
 			// calculate periapsis passage time
 			double timeFromPeri = 0.0;
-			KeplerSolver.GetTimeAtPosition(location.planet.mass, __instance.periapsis, specificEnergy, location.Radius, trueAnomaly_Out, ref timeFromPeri);
+			new KeplerSolver(location.planet.mass, __instance.periapsis, specificEnergy).GetTimeAtPosition(location.Radius, trueAnomaly_Out, ref timeFromPeri);
+			if(double.IsNaN(timeFromPeri))
+            {
+				LOG(LOG_LEVEL.ERROR, "timeFromPeri is NaN - planet mass = " + location.planet.mass + " - peri = " + __instance.periapsis + " - specEnerg = " + specificEnergy + " - radius = " + location.Radius + " - trueAnomaly = " + trueAnomaly_Out);
+			}
+			if(double.IsNaN(location.time))
+            {
+				LOG(LOG_LEVEL.ERROR, "location.time is NaN - planet = " + location.planet.codeName + "; x, y = " + location.position.x + "; " + location.position.y + "; vx, vy = " + location.velocity.x + "; " + location.velocity.y);
+			}
+			if(double.IsNaN(__instance.period))
+            {
+				LOG(LOG_LEVEL.ERROR, "period is NaN - sma = " + __instance.sma + "; planet mass = " + location.planet.mass);
+			}
+			
 			__instance.periapsisPassageTime = location.time - timeFromPeri * (double)(__instance.direction) /*- 10.0 * __instance.period*/;
 
 
@@ -124,7 +211,7 @@ public class Orbit_OrbitPatch
 				else
 				{
 					double loc_trueAnomaly = Math.Acos((__instance.slr / location.planet.SOI - 1.0) / __instance.ecc);
-					KeplerSolver.GetTimeAtPosition(location.planet.mass, __instance.periapsis, specificEnergy, location.planet.SOI, loc_trueAnomaly, ref timeFromPeri);
+					new KeplerSolver(location.planet.mass, __instance.periapsis, specificEnergy).GetTimeAtPosition(location.planet.SOI, loc_trueAnomaly, ref timeFromPeri);
 					__instance.orbitEndTime = __instance.periapsisPassageTime + timeFromPeri;
 				}
 
@@ -149,6 +236,13 @@ public class Orbit_OrbitPatch
 			}
 		}
 	}
+
+	// Local log function
+	[Conditional("ACTIVE_LOGS")]
+	private static void LOG(LOG_LEVEL level, string message)
+	{
+		AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
+	}
 }
 
 
@@ -157,7 +251,10 @@ public class Orbit_OrbitConstructor2_Patch
 {
 	// This is a hack that tells the constructor to interpret the sma parameter as slr instead.
 	// In exchange, it allows to create parabolic or hyperbolic orbits, which the original constructor isn't made for
-	public static bool useHackedConstructor = false; 
+	public static bool useHackedConstructor = false;
+
+	// Another hack: use to act as a copy constructor
+	public static Orbit orbitToCopy = null;
 	
 	[HarmonyPrefix]
 	public static bool Orbit_prefix()
@@ -168,9 +265,11 @@ public class Orbit_OrbitConstructor2_Patch
 	[HarmonyPostfix]
 	public static void Orbit_postfix(Orbit __instance, double sma, double ecc, double arg, int direction, Planet planet, PathType pathType, Planet nextPlanet)
     {
+		LOG(LOG_LEVEL.DEBUG, "Setting location_out");
 		Traverse.Create(__instance).Field("location_Out").SetValue(new Location(planet, Double2.zero, Double2.zero));
 
 		__instance.pathType = pathType;
+		LOG(LOG_LEVEL.DEBUG, "Setting nextPlanet");
 		Traverse.Create(__instance).Field("nextPlanet").SetValue(nextPlanet);
 
 		if (pathType == PathType.Eternal)
@@ -178,9 +277,33 @@ public class Orbit_OrbitConstructor2_Patch
 			__instance.orbitEndTime = double.PositiveInfinity;
 		}
 
-		if (useHackedConstructor)
+		if(orbitToCopy != null)
+        {
+			// HACKED CONSTRUCTOR: act as a copy constructor - I hope Stef won't see that mess!
+			// ------------------
+			LOG(LOG_LEVEL.DEBUG, "Copy constructor called");
+			__instance.slr       = orbitToCopy.slr;
+			__instance.ecc       = orbitToCopy.ecc;
+			__instance.arg       = orbitToCopy.arg;
+			__instance.direction = orbitToCopy.direction;
+			__instance.periapsis = orbitToCopy.periapsis;
+			__instance.apoapsis  = orbitToCopy.apoapsis;
+			__instance.sma       = orbitToCopy.sma;
+			__instance.period    = orbitToCopy.period;
+			__instance.periapsisPassageTime = orbitToCopy.periapsisPassageTime;
+			__instance.orbitStartTime = orbitToCopy.orbitStartTime;
+			__instance.orbitEndTime = orbitToCopy.orbitEndTime;
+
+			orbitToCopy.getSpecificEnergyAndAngularMomentum(out double specificEnergy, out double angularMomentum);
+			__instance.addAdditionalData(specificEnergy, angularMomentum);
+
+			// Reset that variable
+			orbitToCopy = null;
+		}
+		else if (useHackedConstructor)
         {
 			// HACKED CONSTRUCTOR: slr has been passed instead of sma (so we can handle the case of parabolas)
+			// ------------------
 			useHackedConstructor = false; // reset that flag
 
 			__instance.slr = sma;
@@ -203,9 +326,15 @@ public class Orbit_OrbitConstructor2_Patch
 				__instance.sma = Double.PositiveInfinity;
 				__instance.period = 0.0;
 			}
+
+			double specificEnergy = planet.mass * (ecc * ecc - 1.0) / (2.0 * __instance.slr);
+			double angularMomentum = Math.Sqrt(planet.mass * __instance.slr) * direction;
+			__instance.addAdditionalData(specificEnergy, angularMomentum);
 		}
 		else
         {
+			// NORMAL CONSTRUCTOR
+			// ------------------
 			__instance.sma = sma;
 			__instance.ecc = ecc;
 			__instance.arg = arg;
@@ -222,7 +351,18 @@ public class Orbit_OrbitConstructor2_Patch
             {
 				__instance.apoapsis = Double.PositiveInfinity;
 			}
+
+			double specificEnergy = planet.mass * (ecc * ecc - 1.0) / (2.0 * __instance.slr);
+			double angularMomentum = Math.Sqrt(planet.mass * __instance.slr) * direction;
+			__instance.addAdditionalData(specificEnergy, angularMomentum);
 		}
+	}
+
+	// Local log function
+	[Conditional("ACTIVE_LOGS")]
+	private static void LOG(LOG_LEVEL level, string message)
+	{
+		AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
 	}
 }
 
@@ -241,12 +381,10 @@ public class Orbit_GetVelocityAtTrueAnomaly_Patch
 	[HarmonyPostfix]
 	public static void GetVelocityAtTrueAnomaly_Postfix(ref Double2 __result, Orbit __instance, double trueAnomaly)
     {
-		double angularMomentum = Orbit_Utils.GetAngularMomentum(__instance);
-		double specificEnergy = Orbit_Utils.GetSpecificEnergy(__instance);
+		__instance.getSpecificEnergyAndAngularMomentum(out double specificEnergy, out double angularMomentum);
 
 		double normalizedTrueAnomaly = Orbit_Utils.NormalizeAngle(trueAnomaly);
 		double radiusAtTrueAnomaly = Kepler.GetRadiusAtTrueAnomaly(__instance.slr, __instance.ecc, normalizedTrueAnomaly);
-
 		
 		double V_theta = angularMomentum / radiusAtTrueAnomaly;
 		double V2 = 2.0 * (specificEnergy + __instance.Planet.mass / radiusAtTrueAnomaly);
@@ -273,10 +411,9 @@ public class Orbit_GetLastTrueAnomalyPassTime_Patch
 	[HarmonyPostfix]
 	public static double GetLastTrueAnomalyPassTime_Postfix(double __result, Orbit __instance, double time, double trueAnomaly, Location ___location_Out)
     {
-		double specificEnergy = Orbit_Utils.GetSpecificEnergy(__instance);
 		double timeFromPeri = 0.0;
 		double radius = __instance.slr / (1.0 + __instance.ecc * Math.Cos(trueAnomaly));
-		KeplerSolver.GetTimeAtPosition(___location_Out.planet.mass, __instance.periapsis, specificEnergy, radius, trueAnomaly, ref timeFromPeri);
+		new KeplerSolver(___location_Out.planet.mass, __instance.periapsis, __instance.getSpecificEnergy()).GetTimeAtPosition(radius, trueAnomaly, ref timeFromPeri);
 
 		double trueAnomalyPassTime = __instance.periapsisPassageTime + timeFromPeri * (double)(__instance.direction);
 
@@ -308,12 +445,16 @@ public class Orbit_UpdateLocation_Patch
     public static void UpdateLocation_Postfix(Orbit __instance, double newTime, ref Location ___location_Out, ref double ___trueAnomaly_Out)
     {
 
-		if (___location_Out.time != newTime && !double.IsNaN(newTime))
+		if(double.IsNaN(newTime))
+        {
+			LOG(LOG_LEVEL.ERROR, "UpdateLocation: newTime is NaN");
+			return;
+		}
+		else if (___location_Out.time != newTime)
 		{
 			double radius = 0.0;
 			double trueAnomaly = 0.0;
-			double specificEnergy = Orbit_Utils.GetSpecificEnergy(__instance);
-			KeplerSolver.GetPositionAtTime(___location_Out.planet.mass, __instance.periapsis, specificEnergy, (newTime - __instance.periapsisPassageTime) * (double)(__instance.direction), ref radius, ref trueAnomaly);
+			new KeplerSolver(___location_Out.planet.mass, __instance.periapsis, __instance.getSpecificEnergy()).GetPositionAtTime((newTime - __instance.periapsisPassageTime) * (double)(__instance.direction), ref radius, ref trueAnomaly);
 			double argument = trueAnomaly + __instance.arg;
 
 			// Calculate position
@@ -345,12 +486,10 @@ public class Orbit_UpdateLocation_Patch
 	}
 
 	// Local log function
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	[Conditional("ACTIVE_LOGS")]
 	private static void LOG(LOG_LEVEL level, string message)
 	{
-#if ACTIVE_LOGS
 		AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
-#endif
 	}
 }
 
@@ -369,7 +508,9 @@ public class Orbit_GetPoints_Patch
 	[HarmonyPostfix]
 	public static Vector3[] GetPoints_Postfix(Vector3[] __result, Orbit __instance, double fromTrueAnomaly, double toTrueAnomaly, int resolution, double scaleMultiplier)
     {
-		return new OrbitDrawer(__instance).GetPoints(fromTrueAnomaly, toTrueAnomaly, resolution, scaleMultiplier);
+		return __instance.getOrbitDrawer().GetPoints(fromTrueAnomaly, toTrueAnomaly, resolution, scaleMultiplier);
 	}
 }
+
+
 
