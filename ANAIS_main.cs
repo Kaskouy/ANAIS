@@ -9,13 +9,13 @@ using HarmonyLib;
 
 namespace ANAIS
 {
-    public class Main : Mod, IUpdatable
+    public class Main : Mod , IUpdatable
     {
         const string C_STR_MOD_ID = "ANAIS";
         const string C_STR_MOD_NAME = "ANAIS";
         const string C_STR_AUTHOR = "Altaïr";
-        const string C_STR_GAME_VERSION = "1.5.9.8";
-        const string C_STR_MOD_VERSION = "v1.0.1";
+        const string C_STR_GAME_VERSION = "1.5.10.2";
+        const string C_STR_MOD_VERSION = "v1.1.0";
         const string C_STR_MOD_DESCRIPTION = "Advanced NAvigation Innovative System\nReplaces the original navigation system with a more elaborated one.";
 
         private const string C_STR_CLOSEST_APPROACH_LINE_MOD_ID = "CLOSEST_APPROACH_LINE";
@@ -38,6 +38,7 @@ namespace ANAIS
         public override Dictionary<string, string> Dependencies { get; } = new Dictionary<string, string> { { "UITools", "1.0" } };
 
         public Dictionary<string, FilePath> UpdatableFiles => new Dictionary<string, FilePath> { { "https://github.com/Kaskouy/ANAIS/releases/latest/download/ANAIS.dll", new FolderPath(ModFolder).ExtendToFile("ANAIS.dll") } };
+        
 
         public Main() : base()
         {
@@ -62,6 +63,13 @@ namespace ANAIS
             {
                 SFS.UI.MenuGenerator.OpenConfirmation(SFS.Input.CloseMode.Current, () => TextLabel(), () => TextConfirm(), DisableClosestApproach, () => TextCancel(), DisableANAIS);
             }
+
+            // Register scene changer events
+            /*ModLoader.Helpers.SceneHelper.OnWorldSceneLoaded += new Action(AnaisManager.setWorldSceneActive);
+            ModLoader.Helpers.SceneHelper.OnWorldSceneUnloaded += new Action(AnaisManager.setWorldSceneInactive);
+
+            // Start ANAIS thread
+            AnaisManager.StartTask();*/
 
 
             string TextLabel()
