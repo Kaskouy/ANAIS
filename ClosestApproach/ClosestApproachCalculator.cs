@@ -5,8 +5,6 @@ using System;
 
 public class ClosestApproachCalculator
 {
-	private static Player thePlayer;
-
 	// This structure is used to encapsulate all the relevant data relative to a specific approach situation
 	public struct T_ApproachData
 	{
@@ -16,181 +14,22 @@ public class ClosestApproachCalculator
 		public double dist;      // distance between the 2 objects
 		public double sepSpeed;  // the separation speed between the 2 objects (if positive, they are getting further from eachother)
 		public bool validity;    // a flag that indicates if data is valid or not
-	}
 
-	// data to memorize the latest approach data and how much time it's valid
-	private static bool lastApproachValid = false;
-	private static double lastApproachCalculationDate = -1.0;
-	private static T_ApproachData lastApproachData = new T_ApproachData();
-
-	// data to memorize the latest approach data and how much time it's valid, for the multi-turn approach
-	private static double lastApproacMultiTurnCalculationDate = -1.0;
-	private static bool lastApproachMultiTurnValid1 = false;
-	private static T_ApproachData lastApproachData_MultiTurn1 = new T_ApproachData();
-	private static uint lastApproachData_nbTurns1 = 0;
-	private static bool lastApproachMultiTurnValid2 = false;
-	private static T_ApproachData lastApproachData_MultiTurn2 = new T_ApproachData();
-	private static uint lastApproachData_nbTurns2 = 0;
-
-	// Once the closest approach data has been calculated, it's considered valid for that many seconds before we recalculate it (unless something changes...)
-	private const double C_APPROACH_DATA_TIME_VALIDITY = 2.0;
-
-
-	// That part is used to stabilize the closest approach line.
-	// If the engines/RCS are off (so the trajectory doesn't change), it's only recalculated every 2 seconds.
-	public static void setPlayer(Player player)
-    {
-		thePlayer = player;
-    }
-
-	public static void resetLastApproachDataValidity()
-	{
-		lastApproachValid = false;
-		lastApproachCalculationDate = -1.0;
-		lastApproachData = new T_ApproachData();
-		lastApproachData.validity = false;
-	}
-
-	private static void memorizeLastApproachData(T_ApproachData approachData)
-	{
-		lastApproachValid = true;
-		lastApproachCalculationDate = WorldTime.main.worldTime;
-		lastApproachData = approachData;
-	}
-
-	private static bool approachDataNeedsRecalculation()
-	{
-		if (!lastApproachValid)
+		public T_ApproachData(bool dummy)
 		{
-			// last approach is not valid (player has just loaded the game, he just switched target...) --> needs to be calculated
-			return true;
-		}
-
-		if ((thePlayer != null) && (thePlayer is Rocket rocket))
-		{
-			bool enginesOn = (rocket.throttle.output_Throttle.Value > 0.0);
-			bool rcsOn = (rocket.arrowkeys.rcs.Value == true);
-			bool timeOut = (WorldTime.main.worldTime > lastApproachCalculationDate + C_APPROACH_DATA_TIME_VALIDITY);
-
-			if (enginesOn || rcsOn || timeOut)
-			{
-				// engines/RCS are on, the player is changing his trajectory --> instantly recompute approach data to let him follow accurately the situation
-				// ...Or the latest data is too old.
-				return true;
-			}
-			else
-			{
-				// the player is not modifying his trajectory, and the latest information is still recent enough --> No recalculation
-				return false;
-			}
-		}
-		else
-		{
-			// kinda unexpected, return true by default (--> recalculate closest approach)
-			return true;
-		}
-	}
-
-
-	public static void resetLastApproachDataValidity_MultiTurn()
-	{
-		lastApproacMultiTurnCalculationDate = -1.0;
-		lastApproachMultiTurnValid1 = false;
-		lastApproachData_MultiTurn1 = new T_ApproachData();
-		lastApproachData_MultiTurn1.validity = false;
-		lastApproachData_nbTurns1 = 0;
-		lastApproachMultiTurnValid2 = false;
-		lastApproachData_MultiTurn2 = new T_ApproachData();
-		lastApproachData_MultiTurn2.validity = false;
-		lastApproachData_nbTurns2 = 0;
-	}
-
-	private static void memorizeLastApproachData_MultiTurn(T_ApproachData approachData1, uint nbTurns1, T_ApproachData approachData2, uint nbTurns2)
-	{
-		lastApproacMultiTurnCalculationDate = WorldTime.main.worldTime;
-		lastApproachMultiTurnValid1 = true;
-		lastApproachData_MultiTurn1 = approachData1;
-		lastApproachData_nbTurns1 = nbTurns1;
-		lastApproachMultiTurnValid2 = true;
-		lastApproachData_MultiTurn2 = approachData2;
-		lastApproachData_nbTurns2 = nbTurns2;
-	}
-
-	private static bool approachDataNeedsRecalculation_MultiTurn()
-	{
-		if (!lastApproachMultiTurnValid1 || !lastApproachMultiTurnValid2)
-		{
-			// last approach is not valid (player has just loaded the game, he just switched target...) --> needs to be calculated
-			return true;
-		}
-
-		if ((thePlayer != null) && (thePlayer is Rocket rocket))
-		{
-			bool enginesOn = (rocket.throttle.output_Throttle.Value > 0.0);
-			bool rcsOn = (rocket.arrowkeys.rcs.Value == true);
-			bool timeOut = (WorldTime.main.worldTime > lastApproacMultiTurnCalculationDate + C_APPROACH_DATA_TIME_VALIDITY);
-
-			if (enginesOn || rcsOn || timeOut)
-			{
-				// engines/RCS are on, the player is changing his trajectory --> instantly recompute approach data to let him follow accurately the situation
-				// ...Or the latest data is too old.
-				return true;
-			}
-			else
-			{
-				// the player is not modifying his trajectory, and the latest information is still recent enough --> No recalculation
-				return false;
-			}
-		}
-		else
-		{
-			// kinda unexpected, return true by default (--> recalculate closest approach)
-			return true;
-		}
-	}
-
-	// Used to memorize the number of turns showed when the player selects a target and triggers the multi-turns calculation for the first time
-	// This is to avoid that the game constantly switches from a suggestion to another, which can be very painful in practice.
-	private static uint nbMemorizedTurnsOnNode1 = 0;
-	private static uint nbMemorizedTurnsOnNode2 = 0;
-	private static double timeMemorizedArrivalAtNode1 = -1.0;
-	private static double timeMemorizedArrivalAtNode2 = -1.0;
-	private static bool nbMemorizedTurnsOnNode1_validity = false;
-	private static bool nbMemorizedTurnsOnNode2_validity = false;
-
-	public static void setNbOfMemorizedTurnsOnNode1(uint nbTurns, double passageTime)
-    {
-		nbMemorizedTurnsOnNode1 = nbTurns;
-		timeMemorizedArrivalAtNode1 = passageTime;
-		nbMemorizedTurnsOnNode1_validity = true;
-	}
-
-	public static void setNbOfMemorizedTurnsOnNode2(uint nbTurns, double passageTime)
-	{
-		nbMemorizedTurnsOnNode2 = nbTurns;
-		timeMemorizedArrivalAtNode2 = passageTime;
-		nbMemorizedTurnsOnNode2_validity = true;
-	}
-
-	public static void resetNbOfMemorizedTurnsOnNode1()
-	{
-		nbMemorizedTurnsOnNode1 = 0;
-		timeMemorizedArrivalAtNode1 = -1.0;
-		nbMemorizedTurnsOnNode1_validity = false;
-	}
-
-	public static void resetNbOfMemorizedTurnsOnNode2()
-	{
-		nbMemorizedTurnsOnNode2 = 0;
-		timeMemorizedArrivalAtNode2 = -1.0;
-		nbMemorizedTurnsOnNode2_validity = false;
+			date = double.NegativeInfinity;
+			locPlayer = null;
+			locTarget = null;
+			dist = 0.0;
+			sepSpeed = 0.0;
+			validity = false;
+        }
 	}
 
 
 	// --------------------------------------------
 	// Basic methods to calculate the approach data
 	// --------------------------------------------
-
 	public static double GetApproachSpeed(T_ApproachData approachData)
     {
 		Double2 relativeVelocity = approachData.locPlayer.velocity - approachData.locTarget.velocity;
@@ -698,10 +537,11 @@ public class ClosestApproachCalculator
 
 		// if separation speed decreases on the last point, this is a potential minimum: initialize the global min with it
 		// Note: this is the only case in which we accept a point that is not a local minimum as the global minimum
-		if (tab_ApproachData[tab_ApproachData.Length - 1].sepSpeed < 0.0)
+		// UPDATE: We don't accept this point anymore in ANAIS since it appears to be misleading due to how it's used now.
+		/*if (tab_ApproachData[tab_ApproachData.Length - 1].sepSpeed < 0.0)
 		{
 			approachData_globalMin = tab_ApproachData[tab_ApproachData.Length - 1];
-		}
+		}*/
 
 		// Calculate the minimum between the 2 best points (i.e. the best point and either its follower or its predecessor)
 		// -----------------------------------------------
@@ -767,16 +607,11 @@ public class ClosestApproachCalculator
 	// The first approach is used if the orbits are both periodic and relatively close, while the
 	// second approach is used in other cases.
 	// ---------------------------------------------------------------------------------------------
-	public static T_ApproachData CalculateClosestApproach(Orbit orbit_A, Orbit orbit_B)
+	public static T_ApproachData CalculateClosestApproach(Orbit orbit_A, Orbit orbit_B, double begin_time)
 	{
-		if (!approachDataNeedsRecalculation())
-		{
-			return lastApproachData; // Skip calculations and return last result
-		}
-
 		// Calculate start time (can be now if it's about the current trajectory, or in the future if it's an anticipated trajectory)
 		// --------------------
-		double start_time = WorldTime.main.worldTime;
+		double start_time = begin_time;
 
 		if (start_time < orbit_A.orbitStartTime)
 		{
@@ -801,9 +636,10 @@ public class ClosestApproachCalculator
 		// Would be weird but just in case...
 		if (end_time < start_time)
 		{
-			resetLastApproachDataValidity();
-			return lastApproachData;
-		}
+			T_ApproachData dummyApproachData = new T_ApproachData();
+            dummyApproachData.validity = false;
+            return dummyApproachData;
+        }
 
 
 		bool is_A_Periodic = (orbit_A.ecc < 1.0) && (orbit_A.pathType != PathType.Escape);
@@ -831,15 +667,6 @@ public class ClosestApproachCalculator
 			bestApproachData.dist = Double.PositiveInfinity;
 
 			bestApproachData = CalculateClosestApproachOnPeriod(orbit_A, orbit_B, start_time, final_time, min_period);
-
-			if (bestApproachData.validity)
-			{
-				memorizeLastApproachData(bestApproachData);
-			}
-			else
-			{
-				resetLastApproachDataValidity();
-			}
 			return bestApproachData;
 		}
 		else
@@ -857,7 +684,7 @@ public class ClosestApproachCalculator
 				T_ApproachData approachData1 = GetApproachAtArgument(orbit_A, orbit_B, start_time, angleIntersection1);
 				T_ApproachData approachData2 = GetApproachAtArgument(orbit_A, orbit_B, start_time, angleIntersection2);
 
-				bool data1Valid = approachData1.validity && (approachData1.date > start_time) && (approachData1.date < end_time);
+                bool data1Valid = approachData1.validity && (approachData1.date > start_time) && (approachData1.date < end_time);
 				bool data2Valid = approachData2.validity && (approachData2.date > start_time) && (approachData2.date < end_time);
 
 				if (data1Valid && data2Valid)
@@ -865,30 +692,30 @@ public class ClosestApproachCalculator
 					// Both approaches are valid, choose the best situation
 					if (approachData1.dist < approachData2.dist)
 					{
-						memorizeLastApproachData(approachData1);
-					}
+						return approachData1;
+                    }
 					else
 					{
-						memorizeLastApproachData(approachData2);
+						return approachData2;
 					}
 				}
 				else if (data1Valid)
 				{
-					// Only approach at node 1 is valid
-					memorizeLastApproachData(approachData1);
+                    // Only approach at node 1 is valid
+                    return approachData1;
 				}
 				else if (data2Valid)
 				{
-					// Only approach at node 2 is valid
-					memorizeLastApproachData(approachData2);
+                    // Only approach at node 2 is valid
+                    return approachData2;
 				}
 				else
 				{
 					// None is valid
-					resetLastApproachDataValidity();
+					T_ApproachData dummyApproachData = new T_ApproachData();
+                    dummyApproachData.validity = false;
+					return dummyApproachData;
 				}
-
-				return lastApproachData;
 			}
 			else
 			{
@@ -898,14 +725,14 @@ public class ClosestApproachCalculator
 
 				if (approachData1.validity && (approachData1.date > start_time) && (approachData1.date < end_time))
 				{
-					memorizeLastApproachData(approachData1);
+					return approachData1;
 				}
 				else
 				{
-					resetLastApproachDataValidity();
+                    T_ApproachData dummyApproachData = new T_ApproachData();
+                    dummyApproachData.validity = false;
+                    return dummyApproachData;
 				}
-
-				return lastApproachData;
 			}
 		}
 	}
@@ -1086,34 +913,28 @@ public class ClosestApproachCalculator
 		LOG(LOG_LEVEL.DEBUG, "  Turn " + nbTurns + " is the best: total cost = " + bestCost);
 	}
 
-	public static void CalculateClosestApproach_MultiTurn(Orbit orbit_A, Orbit orbit_B, T_ApproachData closestApproach, out T_ApproachData bestApproachData1, out uint nbTurns1, out T_ApproachData bestApproachData2, out uint nbTurns2)
+	public static void CalculateClosestApproach_MultiTurn(Orbit orbit_A, Orbit orbit_B, T_ApproachData closestApproach, double begin_time, out T_ApproachData bestApproachData1, out uint nbTurns1, ref double preferredTimeOfArrivalAtNode1,out T_ApproachData bestApproachData2, out uint nbTurns2, ref double preferredTimeOfArrivalAtNode2)
     {
-		if (!approachDataNeedsRecalculation_MultiTurn())
-		{
-			// Skip calculations and return last result
-			nbTurns1 = lastApproachData_nbTurns1;
-			bestApproachData1 = lastApproachData_MultiTurn1; 
-			nbTurns2 = lastApproachData_nbTurns2;
-			bestApproachData2 = lastApproachData_MultiTurn2;
-            return;
-		}
-
 		// Check that both orbits have no encounter/escape event scheduled
 		if ( (orbit_A.pathType != PathType.Eternal) || (orbit_B.pathType != PathType.Eternal))
         {
 			// return invalid data
-			nbTurns1 = 0;
-			bestApproachData1 = lastApproachData_MultiTurn1;
-			nbTurns2 = 0;
-			bestApproachData2 = lastApproachData_MultiTurn2;
-			return;
+			bestApproachData1 = new T_ApproachData();
+			bestApproachData1.validity = false;
+            nbTurns1 = 0;
+            bestApproachData2 = new T_ApproachData();
+            bestApproachData2.validity = false;
+            nbTurns2 = 0;
+			preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
+            preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
+            return;
 		}
 
 		double angleIntersection1, angleIntersection2;
 
 		bool intersects = Orbit_Utils.GetIntersectionAngles(orbit_A, orbit_B, out angleIntersection1, out angleIntersection2);
 
-		// If the orbit don't intersect, don't calculate anything
+		// If the orbit don't intersect, let's see if they are close from crossing at least...
 		if(!intersects)
         {
 			double RA = orbit_A.GetRadiusAtAngle(angleIntersection1);
@@ -1122,18 +943,22 @@ public class ClosestApproachCalculator
 			// We continue the calculation if the orbits are not far from crossing, otherwise we stop.
 			if (Math.Abs(RB - RA) > 0.05 * RB) 
             {
-				// return invalid data
-				nbTurns1 = 0;
-				bestApproachData1 = lastApproachData_MultiTurn1;
-				nbTurns2 = 0;
-				bestApproachData2 = lastApproachData_MultiTurn2;
-				return;
+                // return invalid data
+                bestApproachData1 = new T_ApproachData();
+                bestApproachData1.validity = false;
+                nbTurns1 = 0;
+                bestApproachData2 = new T_ApproachData();
+                bestApproachData2.validity = false;
+                nbTurns2 = 0;
+                preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
+                preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
+                return;
 			}
 		}
 
 		// Calculate start time (can be now if it's about the current trajectory, or in the future if it's an anticipated trajectory)
 		// --------------------
-		double start_time = WorldTime.main.worldTime;
+		double start_time = begin_time;
 
 		if (start_time < orbit_A.orbitStartTime)
 		{
@@ -1141,9 +966,6 @@ public class ClosestApproachCalculator
 		}
 
 		const uint NB_MAX_TURNS = 12;
-
-		double weightedBestApproach1 = 0, weightedBestApproach2 = 0;
-		double curStartTime;
 
 		// Initialization
 		bestApproachData1 = new T_ApproachData();
@@ -1155,73 +977,63 @@ public class ClosestApproachCalculator
 		bool calculateApproach1 = MustCalculateMultiTurnApproachAtnode(angleIntersection1, closestApproach);
 		bool calculateApproach2 = intersects && MustCalculateMultiTurnApproachAtnode(angleIntersection2, closestApproach); // if the orbits don't intersect we only keep the first point
 
-		// Calculate the min distance threshold: if an encounter is found at a distance less than
-		// that distance times the number of turns, then we consider it sufficiently interesting
-		// and we stop searching alternatives with even more turns
-		const double ANGLE_THRESHOLD = 5.0 * Math.PI / 180.0; // 5 degrees
-		double distanceMin1 = orbit_A.GetRadiusAtAngle(angleIntersection1) * ANGLE_THRESHOLD;
-		double distanceMin2 = orbit_A.GetRadiusAtAngle(angleIntersection2) * ANGLE_THRESHOLD;
-
-		
-
 		// Calculate approach at node 1 on each turn and memorize the best (if calculation needed)
 		// ---------------------------------------------------------------
 		if (calculateApproach1)
         {
-			// If we just passed the node, the preferred number of turns must be decreased so that it corresponds to what we actually memorized
-			if(nbMemorizedTurnsOnNode1_validity && (start_time + (nbMemorizedTurnsOnNode1-1) * orbit_A.period > timeMemorizedArrivalAtNode1) )
-			{
-				nbMemorizedTurnsOnNode1--;
-				LOG(LOG_LEVEL.INFO, " Node 1: passed the node, preferred number of turns is now " + nbMemorizedTurnsOnNode1);
-			}
+			// Evaluate the current preferred number of turns from the preferred arrival date for this node
+			uint preferredNbTurnsNode1 = 0;
 
-			LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - preferred nb turns = " + nbMemorizedTurnsOnNode1);
-			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection1, NB_MAX_TURNS, nbMemorizedTurnsOnNode1, out bestApproachData1, out nbTurns1);
-			
-			if(bestApproachData1.validity)
-            {
-				// Memorize that number of turns to reuse it on the next iterations
-				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - nb turns = " + nbTurns1);
-				setNbOfMemorizedTurnsOnNode1(nbTurns1, bestApproachData1.date);
-			}
-			else
-            {
-				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - Calculation failed, reset best nb of turns ");
-				resetNbOfMemorizedTurnsOnNode1();
-			}
+			if(preferredTimeOfArrivalAtNode1 > start_time)
+			{
+                preferredNbTurnsNode1 = (uint)((preferredTimeOfArrivalAtNode1 -  start_time) / orbit_A.period) + 1;
+            }
+            // else... preferredNbTurnsNode1 will be 0 and will just be ignored
+
+            LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - preferred nb turns = " + preferredNbTurnsNode1);
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection1, NB_MAX_TURNS, preferredNbTurnsNode1, out bestApproachData1, out nbTurns1);
 		}
 
+        // Update preferred time of arrival (in case it changed)
+        if (bestApproachData1.validity)
+        {
+            preferredTimeOfArrivalAtNode1 = bestApproachData1.date;
+        }
+        else
+        {
+            LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - Calculation skipped/failed, reset preferred arrival time");
+            preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
+        }
 
-		// Calculate approach at node 2 on each turn and memorize the best (if calculation needed)
-		// ---------------------------------------------------------------
-		if (calculateApproach2)
+
+        // Calculate approach at node 2 on each turn and memorize the best (if calculation needed)
+        // ---------------------------------------------------------------
+        if (calculateApproach2)
 		{
-			// If we just passed the node, the preferred number of turns must be decreased so that it corresponds to what we actually memorized
-			if (nbMemorizedTurnsOnNode2_validity && (start_time + (nbMemorizedTurnsOnNode2 - 1) * orbit_A.period > timeMemorizedArrivalAtNode2))
-			{
-				nbMemorizedTurnsOnNode2--;
-				LOG(LOG_LEVEL.INFO, " Node 2: passed the node, preferred number of turns is now " + nbMemorizedTurnsOnNode2);
-			}
+			// Evaluate the current preferred number of turns from the preferred arrival date for this node
+            uint preferredNbTurnsNode2 = 0;
 
-			LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - preferred nb turns = " + nbMemorizedTurnsOnNode2);
-			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection2, NB_MAX_TURNS, nbMemorizedTurnsOnNode2, out bestApproachData2, out nbTurns2);
+            if (preferredTimeOfArrivalAtNode2 > start_time)
+            {
+                preferredNbTurnsNode2 = (uint)((preferredTimeOfArrivalAtNode2 - start_time) / orbit_A.period) + 1;
+            }
+            // else... preferredNbTurnsNode2 will be 0 and will just be ignored
 
-			if (bestApproachData2.validity)
-			{
-				// Memorize that number of turns to reuse it on the next iterations
-				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - nb turns = " + nbTurns2);
-				setNbOfMemorizedTurnsOnNode2(nbTurns2, bestApproachData2.date);
-			}
-			else
-			{
-				LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - Calculation failed, reset best nb of turns ");
-				resetNbOfMemorizedTurnsOnNode2();
-			}
+            LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - preferred nb turns = " + preferredNbTurnsNode2);
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection2, NB_MAX_TURNS, preferredNbTurnsNode2, out bestApproachData2, out nbTurns2);
 		}
-		
 
-		memorizeLastApproachData_MultiTurn(bestApproachData1, nbTurns1, bestApproachData2, nbTurns2);
-	}
+        // Update preferred time of arrival (in case it changed)
+        if (bestApproachData2.validity)
+        {
+            preferredTimeOfArrivalAtNode2 = bestApproachData2.date;
+        }
+        else
+        {
+            LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - Calculation skipped/failed, reset preferred arrival time");
+            preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
+        }
+    }
 
 
 	// Local log function
