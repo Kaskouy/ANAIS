@@ -43,9 +43,10 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 	private static Double2 _relativeVelocity; // valid in all navigation modes but DEFAULT
 	private static Double2 _closestApproachPosition;   // only valid in the following navigation modes: FINAL_APPROACH, IMMINENT_ENCOUNTER, IMMINENT_IMPACT
 	private static double  _timeBeforeClosestApproach; // only valid in the following navigation modes: FINAL_APPROACH, IMMINENT_ENCOUNTER, IMMINENT_IMPACT
+	private static bool _entrySOIdetected; // valid in all navigation modes but default
 
-	// colors
-	private static Color _defaultArrowColor = new Color(1.0f, 1.0f, 1.0f, 0.9019608f);
+    // colors
+    private static Color _defaultArrowColor = new Color(1.0f, 1.0f, 1.0f, 0.9019608f);
 
 	private static DynamicColor _arrowX_color = new DynamicColor(_defaultArrowColor, _defaultArrowColor, DynamicColor.E_BLINKING_MODE.BLINKING_NONE, 0.0f);
 	private static DynamicColor _arrowY_color = new DynamicColor(_defaultArrowColor, _defaultArrowColor, DynamicColor.E_BLINKING_MODE.BLINKING_NONE, 0.0f);
@@ -53,8 +54,6 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 	private static DynamicColor _textY_color  = new DynamicColor(_defaultArrowColor, _defaultArrowColor, DynamicColor.E_BLINKING_MODE.BLINKING_NONE, 0.0f);
 
 	// constants
-	private const double C_SEARCH_CLOSEST_APPROACH_PERIOD = 60.0; // seconds - a closest approach will be searched over that many seconds from the current date
-	private const double C_NEIGHBORHOOD_DISTANCE = 10000.0;       // meters  - a target is considered close to the player ship if it's closer than that distance
 	private const double C_IMPACT_DISTANCE_THRESHOLD = 1.0;       // meters  - a target is considered on an impact trajectory if the closest approach is below that value
 	private const double C_IMPACT_VELOCITY_THRESHOLD = 5.0;       // m/s     - below that speed value, we display an encounter instead of an impact
 	private const double C_MIN_DISTANCE = 20.0;                   // meters  - in CLOSE_TO_TARGET mode, the distance arrow won't be showed below this value
@@ -88,143 +87,68 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 		// Initialize default value
 		_navState = E_NAV_MODE.DEFAULT;
 
-		// Check for encounter modes
-		// -------------------------
-		if ( (Map.manager.mapMode.Value == false) &&                                                                    // If the view is in ship mode...
-			 (PlayerController.main.player.Value != null && PlayerController.main.player.Value.mapPlayer != null) &&    // ...and the player's rocket exists...
-			 (Map.navigation.target != null) && !(Map.navigation.target is MapPlanet))                                  // ...and a target is defined, and is not a planet
-        {
-			_relativePosition = Map.navigation.target.Location.position - PlayerController.main.player.Value.mapPlayer.Location.position;
-			_relativeVelocity = Map.navigation.target.Location.velocity - PlayerController.main.player.Value.mapPlayer.Location.velocity;
-
-			// CHECK IF WE ARE CLOSE TO TARGET
-			// -------------------------------
-			if (_relativePosition.magnitude < C_NEIGHBORHOOD_DISTANCE)
+        if ((PlayerController.main.player.Value != null && PlayerController.main.player.Value.mapPlayer != null) &&    // If the player's rocket exists...
+            (Map.navigation.target != null))                                                                           // ...and a target is defined
+		{
+            if(!Map.manager.mapMode.Value) 
 			{
-				_navState = E_NAV_MODE.CLOSE_TO_TARGET;
-			}
+                // Set input data for ANAIS - Do this if view is in ship mode only, because in map mode it's already done in MapNavigation
+                AnaisManager.SetInputData(PlayerController.main.player.Value.mapPlayer, Map.navigation.target);
+            }
 
-			// CHECK IF WE ARE ON FINAL APPROACH OR ENCOUNTER/IMPACT MODE
-			// ----------------------------------------------------------
-			Orbit playerOrbit = null, targetOrbit = null;
-			
-			// Get player orbit
-			Trajectory playerTrajectory = PlayerController.main.player.Value.mapPlayer.Trajectory;
+			// NOTE: we intentionally run the rest even if we are in map mode, because SmartSAS uses the data from there when used with ANAIS
+			// ----
 
-			if (playerTrajectory.paths.Count > 0)
-			{
-				playerOrbit = playerTrajectory.paths[0] as Orbit;
-			}
+            // Retrieve output data
+            bool hasData = AnaisManager.getVelocityArrowData(out bool finalApproach, out ClosestApproachCalculator.T_ApproachData approachData, out _relativeVelocity, out _entrySOIdetected);
 
-			// Get target orbit
-			Trajectory targetTrajectory = Map.navigation.target.Trajectory;
-
-			if (targetTrajectory.paths.Count > 0)
-			{
-				targetOrbit = targetTrajectory.paths[0] as Orbit;
-			}
-
-			if ((playerOrbit != null) && (targetOrbit != null))
-			{
-				// Calculate the closest approach over the next 60 seconds
-				double time_now = WorldTime.main.worldTime;
-				ClosestApproachCalculator.T_ApproachData approachData = ClosestApproachCalculator.CalculateClosestApproachOnShortPeriod(playerOrbit, targetOrbit, time_now, time_now + C_SEARCH_CLOSEST_APPROACH_PERIOD);
-
-				if (approachData.validity)
-				{
-					_closestApproachPosition = approachData.locTarget.position - approachData.locPlayer.position;
-					_timeBeforeClosestApproach = approachData.date - time_now;
-
-					if ((_timeBeforeClosestApproach > 0.0) && (_timeBeforeClosestApproach < C_SEARCH_CLOSEST_APPROACH_PERIOD) && (approachData.dist < C_NEIGHBORHOOD_DISTANCE))
-					{
-						if(approachData.dist < C_IMPACT_DISTANCE_THRESHOLD) //IMMINENT_IMPACT
-                        {
-							if(_relativeVelocity.magnitude < C_IMPACT_VELOCITY_THRESHOLD)
-							{ 
-								_navState = E_NAV_MODE.IMMINENT_ENCOUNTER; 
-							}
-							else
-                            {
-								_navState = E_NAV_MODE.IMMINENT_IMPACT;
-							}
-						}
-						else
-						{
-							_navState = E_NAV_MODE.FINAL_APPROACH;
-						}
-					}
-				}
-			}
-		}
-
-
-		// Check for transfer mode (ANAIS)
-		// -------------------------------
-		if ((_navState == E_NAV_MODE.DEFAULT) &&                                                                       // If we are none of the encounter modes...
-		    (Map.manager.mapMode.Value == false) &&                                                                    // ...and the view is in ship mode...
-			(PlayerController.main.player.Value != null && PlayerController.main.player.Value.mapPlayer != null) &&    // ...and the player's rocket exists...
-			(Map.navigation.target != null))                                                                           // ...and a target is defined
-        {
-			Orbit playerOrbit = null, targetOrbit = null;
-
-			// Get player orbit
-			Trajectory playerTrajectory = PlayerController.main.player.Value.mapPlayer.Trajectory;
-
-			if (playerTrajectory.paths.Count > 0)
-			{
-				playerOrbit = playerTrajectory.paths[0] as Orbit;
-			}
-
-			// Get target orbit
-			Trajectory targetTrajectory = Map.navigation.target.Trajectory;
-
-			if (targetTrajectory.paths.Count > 0)
-			{
-				targetOrbit = targetTrajectory.paths[0] as Orbit;
-			}
-
-			// If target is a planet, identify the concerned planet
-			MapPlanet targetMapPlanet = Map.navigation.target as MapPlanet;
-			Planet targetPlanet = null;
-
-			if (targetMapPlanet != null)
-			{
-				targetPlanet = targetMapPlanet.planet;
-			}
-
-			// Check if we can use ANAIS
-			bool useANAIS = AnaisTransferCalculator.isAnaisTransferCalculationDoable(playerOrbit, targetOrbit, targetPlanet);
-
-			if (useANAIS)
+            if (hasData)
             {
-				Location locationStart = playerOrbit.GetLocation(WorldTime.main.worldTime);
-
-				AnaisTransfer anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, targetPlanet, WorldTime.main.worldTime);
-
-				if ((anaisTransfer != null) && (anaisTransfer.transferOrbit != null))
+                if (finalApproach)
                 {
-					Location locationTransfer;
+                    // FINAL APPROACH MODE
+                    // -------------------
+                    _relativePosition = Map.navigation.target.Location.position - PlayerController.main.player.Value.mapPlayer.Location.position;
+                    _relativeVelocity = Map.navigation.target.Location.velocity - PlayerController.main.player.Value.mapPlayer.Location.velocity;
 
-					if(anaisTransfer.childTransferOrbit != null)
+                    if (approachData.validity == false)
                     {
-						// Is interplanetary transfer
-						locationTransfer = anaisTransfer.childTransferOrbit.GetLocation(WorldTime.main.worldTime);
-					}
+                        // We don't have a closest approach in the next 60 seconds anymore but we are still close to the target
+						_navState = E_NAV_MODE.CLOSE_TO_TARGET;
+                    }
 					else
-                    {
-						// Is direct transfer
-						locationTransfer = anaisTransfer.transferOrbit.GetLocation(WorldTime.main.worldTime);
-					}
+					{
+                        // We have an imminent encounter
+						_closestApproachPosition = approachData.locTarget.position - approachData.locPlayer.position;
+                        _timeBeforeClosestApproach = approachData.date - WorldTime.main.worldTime;
 
-					_relativeVelocity = locationTransfer.velocity - locationStart.velocity;
-
+                        if (approachData.dist < C_IMPACT_DISTANCE_THRESHOLD) // approach distance is very low: Impact trajectory
+                        {
+                            if (_relativeVelocity.magnitude < C_IMPACT_VELOCITY_THRESHOLD)
+                            {
+                                _navState = E_NAV_MODE.IMMINENT_ENCOUNTER;
+                            }
+                            else
+                            {
+                                _navState = E_NAV_MODE.IMMINENT_IMPACT;
+                            }
+                        }
+                        else
+                        {
+                            _navState = E_NAV_MODE.FINAL_APPROACH;
+                        }
+                    }
+                }
+                else
+                {
+                    // We are far from target
 					_navState = E_NAV_MODE.ANAIS_TRANSFER_PLANNED;
-				}
-			}
-		}
+                }
+            }
+        }
 
-		// handle navigation state change if needed
-		if (previousNavState != _navState) OnNavigationModeChanged(previousNavState, _navState);
+        // handle navigation state change if needed
+        if (previousNavState != _navState) OnNavigationModeChanged(previousNavState, _navState);
 	}
 
 	private static void OnNavigationModeChanged(E_NAV_MODE oldNavState, E_NAV_MODE newNavState)
@@ -245,9 +169,9 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 		// transition from DEFAULT or ANAIS TRANSFER to one of the encounter modes
 		if( ((oldNavState == E_NAV_MODE.DEFAULT) || (oldNavState == E_NAV_MODE.ANAIS_TRANSFER_PLANNED)) && (newNavState != E_NAV_MODE.ANAIS_TRANSFER_PLANNED))
         {
-			// arrowX is the velocity arrow: displayed in blinking light blue in this case, to tell the player that he should burn in that direction
-			// If the previous mode was something else than DEFAULT we don't do this, because we use the same color and it would restart the blinking process.
-			_arrowX_color.changeColor(DynamicColor.E_COLOR.LIGHT_BLUE_2);
+            // arrowX is the velocity arrow: displayed in blinking light blue in this case, to tell the player that he should burn in that direction
+            // If the previous mode was something else than DEFAULT or ANAIS_TRANSFER_PLANNED we don't do this, because we use the same color and it would restart the blinking process.
+            _arrowX_color.changeColor(DynamicColor.E_COLOR.LIGHT_BLUE_2);
 			_arrowX_color.changeBlinkingMode(DynamicColor.E_BLINKING_MODE.BLINKING_SMOOTH, 1.8f);
 			_arrowX_color.restartBlinkingProcess();
 			_textX_color.changeColor(DynamicColor.E_COLOR.LIGHT_BLUE);
@@ -257,8 +181,8 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 
 		if(newNavState == E_NAV_MODE.ANAIS_TRANSFER_PLANNED)
         {
-			// arrowX is the velocity arrow: displayed in blinking light blue in this case, to tell the player that he should burn in that direction
-			// If the previous mode was something else than DEFAULT we don't do this, because we use the same color and it would restart the blinking process.
+			// arrowX is the velocity arrow: displayed in blinking cyan in this case, to tell the player that he should burn in that direction
+			// This is applied no matter what was the previous state because this color is specific to this mode
 			_arrowX_color.changeColor(DynamicColor.E_COLOR.CYAN_2);
 			_arrowX_color.changeBlinkingMode(DynamicColor.E_BLINKING_MODE.BLINKING_SMOOTH, 1.8f);
 			_arrowX_color.restartBlinkingProcess();
@@ -302,7 +226,15 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 			_textY_color.changeBlinkingMode(DynamicColor.E_BLINKING_MODE.BLINKING_BINARY, 1.2f);
 			return;
 		}
-	}
+
+        // transition to ANAIS_TRANSFER_PLANNED mode
+        if (newNavState == E_NAV_MODE.ANAIS_TRANSFER_PLANNED)
+        {
+            // arrowY isn't displayed in this case - color resetted to default
+            setVelocityArrowColor(arrow_Y, _defaultArrowColor, _defaultArrowColor);
+            return;
+        }
+    }
 
 
 	// FUNCTIONS THAT RETURN THE STRINGS TO BE DISPLAYED NEXT TO EACH ARROW
@@ -313,12 +245,20 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 
 		if (_navState != E_NAV_MODE.DEFAULT)
 		{
-			double speed = _relativeVelocity.magnitude;
+			if(_entrySOIdetected && (_navState == E_NAV_MODE.ANAIS_TRANSFER_PLANNED))
+			{
+				label = "(Encounter)"; // Show "Encounter" instead of speed if an encounter is planned, to let the player know that he should switch to map mode
+			}
+			else
+			{
+                double speed = _relativeVelocity.magnitude;
 
-			bool showDecimals = (speed < 10.0) ? true : false;
-			string speedText = Units.ToVelocityString(speed, showDecimals);
+                bool showDecimals = (speed < 10.0) ? true : false;
+                string speedText = Units.ToVelocityString(speed, showDecimals);
 
-			label = "ΔV = " + speedText;
+                label = "ΔV = " + speedText;
+            }
+			
 		}
 
 		return label;
@@ -566,28 +506,31 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 	{
 		// Compute and display custom velocity arrows (if applicable)
 		// ------------------------------------------
-		if ((arrow_X != null) && (arrow_Y != null) && !Map.manager.mapMode.Value) // arrows exist and view is in ship mode
+		if ((arrow_X != null) && (arrow_Y != null) /*&& !Map.manager.mapMode.Value*/) // arrows exist and view is in ship mode
 		{
 			evaluateNavigationState();
 
-			if(_navState != E_NAV_MODE.DEFAULT)
+			if (!Map.manager.mapMode.Value) // view is in ship mode
             {
-				try
+				if (_navState != E_NAV_MODE.DEFAULT)
 				{
-					displayDeltaVarrow(location);
-					return false;
+					try
+					{
+						displayDeltaVarrow(location);
+						return false;
+					}
+					catch (Exception ex)
+					{
+						LOG(LOG_LEVEL.ERROR, "Exception : " + ex.Message);
+						return true;
+					}
 				}
-				catch (Exception ex)
+				else
 				{
-					LOG(LOG_LEVEL.ERROR, "Exception : " + ex.Message);
+					// default mode: call usual code
 					return true;
 				}
 			}
-			else
-            {
-				// default mode: call usual code
-				return true;
-            }
 		}
 
 		// call the original method
