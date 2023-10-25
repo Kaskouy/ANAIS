@@ -1,5 +1,6 @@
 ﻿using SFS.World;
 using SFS.World.Maps;
+using SFS.WorldBase;
 using System;
 using UnityEngine;
 
@@ -86,7 +87,7 @@ public class Drawing_Utils
         }
 	}
 
-	public static void DrawDashedLine(Orbit orbit, Location start, Location end, Color color, string startText, string endText)
+	public static void DrawDashedLine(Planet planet, Location start, Location end, Color color, string startText, string endText)
 	{
 		Vector3[] points = new Vector3[2];
 		const double scaleMultiplier = 0.001;
@@ -99,17 +100,17 @@ public class Drawing_Utils
 		points[1].y = (float)(end.position.y * scaleMultiplier);
 		points[1].z = 0.0f;
 
-		Map.dashedLine.DrawLine(points, orbit.Planet, color * new Color(1f, 1f, 1f, 0.5f), color * new Color(1f, 1f, 1f, 0.5f));
+		Map.dashedLine.DrawLine(points, planet, color * new Color(1f, 1f, 1f, 0.5f), color * new Color(1f, 1f, 1f, 0.5f));
 
 		Vector2 unitVector = (end.position - start.position).ToVector2.normalized;
 
 		if (startText != null)
 		{
-			MapDrawer.DrawPointWithText(15, color, startText, 40, color, orbit.Planet.mapHolder.position + points[0], -unitVector, 4, 4);
+			MapDrawer.DrawPointWithText(15, color, startText, 40, color, planet.mapHolder.position + points[0], -unitVector, 4, 4);
 		}
 		if (endText != null)
 		{
-			MapDrawer.DrawPointWithText(15, color, endText, 40, color, orbit.Planet.mapHolder.position + points[1], unitVector, 4, 4);
+			MapDrawer.DrawPointWithText(15, color, endText, 40, color, planet.mapHolder.position + points[1], unitVector, 4, 4);
 		}
 	}
 }
