@@ -65,6 +65,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AnaisLogger.cs" />
+    <Compile Include="SFS_Patches\WorldView_Patch.cs" />
+    <Compile Include="TransferCalculator\AnaisDataSet.cs" />
+    <Compile Include="TransferCalculator\AnaisManager.cs" />
     <Compile Include="TransferCalculator\AnaisTransfer.cs" />
     <Compile Include="ClosestApproach\ClosestApproachCalculator.cs" />
     <Compile Include="ANAIS_main.cs" />
