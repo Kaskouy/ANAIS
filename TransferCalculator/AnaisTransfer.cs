@@ -55,16 +55,9 @@ class AnaisTransfer
         childTransferOrbit = null;
     }
 
-    private bool checkDates(double startTime, double endTime)
+    public Double2 GetDeltaV_start()
     {
-        if ((startTime < originOrbit.orbitStartTime) || (endTime > destinationOrbit.orbitEndTime))
-        {
-            return false;
-        }
-        else
-        {
-            return true;
-        }
+        return deltaV_start;
     }
 
     private bool checkPlanetaryConfiguration()
@@ -160,13 +153,6 @@ class AnaisTransfer
         if (!checkPlanetaryConfiguration())
         {
             LOG(LOG_LEVEL.WARNING, "AnaisTransfer::calculateTransfer: planetary configuration is not good");
-            return;
-        }
-
-        // Check dates compatibility
-        if (checkDates(startTime, endTime) == false)
-        {
-            LOG(LOG_LEVEL.WARNING, "AnaisTransfer::calculateTransfer: dates are not consistent");
             return;
         }
 
@@ -562,13 +548,14 @@ class AnaisTransfer
 
             // Calculate DV and efficiency at start
             Location startShipLocationAfterBurn = childTransferOrbit.GetLocation(departureTime);
-            calculateDeltaVandTransferEfficiency(startShipLocation.velocity, startShipLocationAfterBurn.velocity, out _, out dv_start, out startEfficiency);
+            calculateDeltaVandTransferEfficiency(startShipLocation.velocity, startShipLocationAfterBurn.velocity, out deltaV_start, out dv_start, out startEfficiency);
         }
         else
         {
             // dv_start and efficiency calculation for a local transfer
             Location startLocation_mainTransfer = transferOrbit.GetLocation(departureTime);
-            dv_start = Math.Abs(startMainLocation.velocity.magnitude - startLocation_mainTransfer.velocity.magnitude);
+            deltaV_start = startLocation_mainTransfer.velocity - startMainLocation.velocity;
+            dv_start = deltaV_start.magnitude;
             startEfficiency = 1.0;
         }
 

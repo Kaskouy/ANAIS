@@ -11,33 +11,7 @@ using SFS.World.Maps;
 
 class AnaisTransferCalculator
 {
-    // When a transfer cost becomes close to 0, the arrival date is memorized so that the targeted point remains fixed
-    private static double _memorizedArrivalTimeForTransfer = -1.0;
-    private static bool _isMemorizedArrivalTimeValid = false;
-
-    // When the transfer cost falls below this threshold, the arrival time is memorized
-    const double C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_MEMORIZATION = 2.5;
-
-    // When the arrival date is memorized but the transfer cost increases above this value we forget about the memorized value and start calculating transfers again
-    const double C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_RESET = 4.0;
-
-    public static void memorizeTimeOfArrival(double arrivalTime)
-    {
-        _memorizedArrivalTimeForTransfer = arrivalTime;
-        _isMemorizedArrivalTimeValid = true;
-    }
-
-    public static void resetMemorizedTimeOfArrival()
-    {
-        _memorizedArrivalTimeForTransfer = -1.0;
-        _isMemorizedArrivalTimeValid = false;
-    }
-
-    public static bool isEncounterPlanned()
-    {
-        return _isMemorizedArrivalTimeValid;
-    }
-
+    
     // FUNCTIONS TO CALCULATE THE TIME RANGE FOR THE RESEARCH OF AN OPTIMAL TRANSFER
     // -----------------------------------------------------------------------------
     private static double getClosestPassageTimeAtArg(Orbit orbit, double time_ref, double arg)
@@ -57,7 +31,6 @@ class AnaisTransferCalculator
         return time;
     }
 
-    
 
     public static bool computeTimeRangeAroundTimeOfArrival(Orbit playerOrbit, Orbit targetOrbit, double timeNow, double arrivalDate, double playerArg, out double startTime, out double endTime)
     {
@@ -85,7 +58,6 @@ class AnaisTransferCalculator
 
         return (startTime < endTime);
     }
-
 
 
     private static bool computeTimeRangeForAnaisTransferCalculation(Orbit playerOrbit, Orbit targetOrbit, double timeNow, out double startTime, out double endTime)
@@ -191,7 +163,6 @@ class AnaisTransferCalculator
     }
 
 
-
     // FUNCTION THAT COMPUTES A LIST OF TRANSFERS EVENLY DISPATCHED IN TERMS OF ARRIVAL TIME
     // -------------------------------------------------------------------------------------
     public static List<AnaisTransfer> calculateTransferList(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double start_time, double arrival_time_start_window, double arrival_time_end_window)
@@ -263,7 +234,6 @@ class AnaisTransferCalculator
 
         return anaisTransferList;
     }
-
 
 
     // CALCULATES THE OPTIMAL TRANSFER WITHIN THE SPECIFIED TIME RANGE
@@ -393,40 +363,6 @@ class AnaisTransferCalculator
     }
 
 
-    public static bool isAnaisTransferCalculationDoable(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet)
-    {
-        // Both orbits must exist
-        if ((playerOrbit == null) || (targetOrbit == null)) return false;
-
-        // The targeted orbit must be periodic (for now we keep things easy)
-        if (targetOrbit.pathType != PathType.Eternal) return false;
-
-        if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))
-        {
-            // Return to mother planet
-            LOG(LOG_LEVEL.DEBUG, "isAnaisTransferCalculationDoable: Return to mother planet");
-            return true;
-        }
-        else if (playerOrbit.Planet == targetOrbit.Planet)
-        {
-            // Local transfer: both objects orbit around the same body, ok
-            LOG(LOG_LEVEL.DEBUG, "isAnaisTransferCalculationDoable: local transfer");
-            return true;
-        }
-        else if((playerOrbit.Planet.parentBody != null) && (playerOrbit.Planet.parentBody == targetOrbit.Planet))
-        {
-            // Interplanetary transfer: the planet orbited by the player and the target have the same parent body
-            LOG(LOG_LEVEL.DEBUG, "isAnaisTransferCalculationDoable: interplanetary transfer");
-            return true;
-        }
-        else
-        {
-            // Any other case
-            return false;
-        }
-    }
-
-
     // MAIN FUNCTION
     // -------------
     public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double timeNow)
@@ -434,15 +370,6 @@ class AnaisTransferCalculator
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
         LOG(LOG_LEVEL.DEBUG, "---   NEW ANAIS TRANSFER CALCULATION    ---");
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
-
-        if(playerOrbit == null)
-        {
-            LOG(LOG_LEVEL.DEBUG, "player orbit is null");
-        }
-        else if (playerOrbit.Planet == null)
-        {
-            LOG(LOG_LEVEL.DEBUG, "player orbit has no planet");
-        }
 
         // Deal with the return to mother planet case first
         if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))
@@ -455,29 +382,10 @@ class AnaisTransferCalculator
             return anaisReturnTransfer;
         }
 
-        // Now deal with actual transfer if necessary
-        if (_isMemorizedArrivalTimeValid)
+        // We can't deal with a non periodic orbit for now.
+        if(!(targetOrbit.period > 0))
         {
-            if(_memorizedArrivalTimeForTransfer > timeNow + 60.0)
-            {
-                // calculate the transfer for that arrival time
-                AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
-                anaisTransfer.calculateTransfer(timeNow, _memorizedArrivalTimeForTransfer);
-
-                if (anaisTransfer.isValid() && anaisTransfer.dv_start < C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_RESET)
-                {
-                    return anaisTransfer;
-                }
-                else
-                {
-                    // calculation failed or deltaV is now above the threshold
-                    resetMemorizedTimeOfArrival();
-                }
-            }
-            else
-            {
-                resetMemorizedTimeOfArrival();
-            }
+            return null;
         }
 
         Orbit startOrbit, endOrbit;
@@ -513,108 +421,9 @@ class AnaisTransferCalculator
         // Calculate the optimal transfer on that time range
         // -------------------------------------------------
         AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, timeNow, startTime, endTime);
-
-        if( (newAnaisTransfer != null) && newAnaisTransfer.isValid() && (newAnaisTransfer.dv_start < C_DELTAV_THRESHOLD_FOR_ARRIVAL_TIME_MEMORIZATION))
-        {
-            memorizeTimeOfArrival(newAnaisTransfer.arrivalTime);
-        }
-
         return newAnaisTransfer;
     }
 
-
-    public static void CalculateInputData(MapPlayer mapPlayer, SelectableObject target)
-    {
-        // Both player and target must be defined
-        if((mapPlayer == null) || (target == null))
-        {
-            return;
-        }
-
-        // If target is a planet, memorize it
-        Planet targetPlanet = null;
-        {
-            MapPlanet targetMapPlanet = target as MapPlanet;
-            if (targetMapPlanet != null) targetPlanet = targetMapPlanet.planet;
-        }
-
-        // Retrieve orbits list
-        List<Orbit> listPlayerOrbits = GetListOrbits(mapPlayer.Trajectory);
-        List<Orbit> listTargetOrbits = GetListOrbits(target.Trajectory);
-
-        // Retrieve current player orbit
-        Orbit playerOrbit = null;
-
-        if(listPlayerOrbits.Count > 0)
-        {
-            playerOrbit = listPlayerOrbits[0];
-        }
-        else
-        {
-            // Player is stationary or on a rectilinear orbit; we'll use a fictive circular orbit for the time range estimations
-            double radius = mapPlayer.Location.Radius;
-            playerOrbit = Orbit_Utils.CreateOrbit(radius, 0.0, 0.0, /*direction*/-1, mapPlayer.Location.planet, PathType.Eternal, null);
-
-            if (playerOrbit == null) return; // Just in case... If object is stuck in the center of a planet because of a bug for example.
-        }
-
-        // Evaluate configuration
-        if((targetPlanet != null) && ((targetPlanet == playerOrbit.Planet) || (targetPlanet == playerOrbit.Planet.parentBody)) )
-        {
-            // Return to mother planet configuration (or gravity assist: we are making a fly-by of the planet we are currently targeting)
-            LOG(LOG_LEVEL.INFO, "CalculateInputData: Return to mother planet configuration detected");
-        }
-        else
-        {
-            // Define target orbit
-            Orbit targetOrbit = null;
-
-            if(listTargetOrbits.Count > 0)
-            {
-                targetOrbit = listTargetOrbits[0];
-            }
-            else
-            {
-                // Target is not on an orbital trajectory - Nothing we can do
-                return;
-            }
-
-            // Evaluate transfer configuration
-            if(playerOrbit.Planet == targetOrbit.Planet)
-            {
-                // Local transfer (player and target orbit the same body)
-                LOG(LOG_LEVEL.INFO, "CalculateInputData: Local transfer configuration detected");
-            }
-            else if(playerOrbit.Planet.parentBody == targetOrbit.Planet)
-            {
-                // Interplanetary transfer (player has to exit a SOI to encounter the target)
-                LOG(LOG_LEVEL.INFO, "CalculateInputData: Interplanetary transfer configuration detected");
-            }
-            else
-            {
-                // Not managed: any other situation
-            }
-        }
-    }
-
-    private static List<Orbit> GetListOrbits(Trajectory a)
-    {
-        List<Orbit> orbitList = new List<Orbit>();
-
-        for(int i = 0; i < a.paths.Count; i++)
-        {
-            if(a.paths[i] is Orbit orbit)
-            {
-                orbitList.Add(orbit);
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return orbitList;
-    }
 
     // Local log function
     [Conditional("ACTIVE_LOGS")]
