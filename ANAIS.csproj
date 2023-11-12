@@ -49,6 +49,7 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Spaceflight Simulator\Spaceflight Simulator Game\Mods\UITools\UITools.dll</HintPath>
     </Reference>
+    <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="UnityEngine">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Spaceflight Simulator\Spaceflight Simulator Game\Spaceflight Simulator_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
@@ -58,6 +59,7 @@
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Spaceflight Simulator\Spaceflight Simulator Game\Spaceflight Simulator_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="UnityEngine.UI, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Spaceflight Simulator\Spaceflight Simulator Game\Spaceflight Simulator_Data\Managed\UnityEngine.UI.dll</HintPath>
@@ -65,6 +67,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AnaisLogger.cs" />
+    <Compile Include="GUI\ANAIS_Panel.cs" />
+    <Compile Include="GUI\ANAIS_Panel_Constants.cs" />
+    <Compile Include="GUI\ANAIS_Settings.cs" />
     <Compile Include="SFS_Patches\WorldView_Patch.cs" />
     <Compile Include="TransferCalculator\AnaisDataSet.cs" />
     <Compile Include="TransferCalculator\AnaisManager.cs" />
