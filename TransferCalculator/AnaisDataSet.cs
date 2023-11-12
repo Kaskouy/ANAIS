@@ -28,16 +28,17 @@ public class AnaisDataSet
     private List<Orbit> _listTarget = new List<Orbit>();
     private Planet _targetPlanet = null;
 
+    private ANAIS_Settings _settings = new ANAIS_Settings(); // the player settings from the ANAIS control panel
+    private NavigationVariables _NavVariables = new NavigationVariables(); // Used to store some temp variables transmitted to the calculation algorithms
+
     // Output data
     // -----------
     public bool _finalApproachMode = false;
     ClosestApproachCalculator.T_ApproachData _approachData_finalApproach = new ClosestApproachCalculator.T_ApproachData(dummy: true);
     private AnaisTransfer _anaisTransfer;
     ClosestApproachCalculator.T_ApproachData _approachData_singleTurn = new ClosestApproachCalculator.T_ApproachData(dummy: true);
-    ClosestApproachCalculator.T_ApproachData _approachData_multiTurn_1 = new ClosestApproachCalculator.T_ApproachData(dummy: true);
-    ClosestApproachCalculator.T_ApproachData _approachData_multiTurn_2 = new ClosestApproachCalculator.T_ApproachData(dummy: true);
-    uint _nbTurns1 = 0;
-    uint _nbTurns2 = 0;
+    ClosestApproachCalculator.T_ApproachData _approachData_multiTurn = new ClosestApproachCalculator.T_ApproachData(dummy: true);
+    uint _nbTurns = 0;
     bool _entryInTargetSOIdetected = false;
 
     // Internal constants
@@ -85,6 +86,15 @@ public class AnaisDataSet
         _listPlayerOrbits = Orbit_Utils.GetListOrbits(mapPlayer.Trajectory);
         _listTarget = Orbit_Utils.GetListOrbits(target.Trajectory);
 
+        // Make a copy of the player settings from the ANAIS control panel
+        // ----------------------------------
+        _settings.copySettings(ANAIS_Panel._settings);
+
+        // Make a copy of some temp variables for ANAIS, and reset them
+        // ----------------------------------
+        _NavVariables.Copy(ANAIS_Panel._NavVariables);
+        ANAIS_Panel._NavVariables.Reset();
+
         _hasInputData = true;
     }
 
@@ -109,7 +119,14 @@ public class AnaisDataSet
             return false;
         }
 
-        // RETRIEVE PLAYER/TARGET ORBIT
+        // Reset preferred times of arrival at nodes if that was asked (if player changed the number of turns through the control panel)
+        if(_NavVariables._approachLinesPreferredDatesNeedReset)
+        {
+            preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
+            preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
+        }
+
+        // RETRIEVE PLAYER/TARGET ORBIT + Evaluate transfer configuration
         // ----------------------------
         Orbit playerOrbit = _listPlayerOrbits[0]; // the current player orbit
         Orbit targetOrbit = null; // the target orbit - will always exist EXCEPT if the target is the main body (the Sun)
@@ -212,12 +229,13 @@ public class AnaisDataSet
 
         // CHECK ENCOUNTER EVENTS
         // ----------------------
+        // This is to check if an encounter is found and if a gravity assist is used
         if ((!_finalApproachMode) && (targetOrbit != null) && isRendezVousTrajectory )
         {
             // Search the first orbit that can potentially lead to an encounter with target (this orbit and the target's one must have the same parent body)
             // We search it that way in case some unexpected bodies went in our way, so that we don't consider them (example: we target Venus, we're on a transfer from Earth to Venus, but the Moon comes on our path - this allows to ignore the Moon)
             int i_firstCompatibleTransfer = 0;
-            bool maintainANAISinhibition = false;
+            bool gravityAssistDetected = false;
 
             while (i_firstCompatibleTransfer < _listPlayerOrbits.Count)
             {
@@ -245,14 +263,15 @@ public class AnaisDataSet
                     else
                     {
                         // An entry into a SOI that's not the target's one has been detected
-                        maintainANAISinhibition = true; // Especially, no previous encounter with the target occured - we would have breaked otherwise
+                        gravityAssistDetected = true; // Especially, no previous encounter with the target occured - we would have breaked otherwise
                     }
                 }
             }
 
             // If ANAIS calculation was restricted, we only maintain the restriction if another body is on our way
             // We suppose it's the player's intention to use that body as a gravity assist opportunity, so calculating the ANAIS transfer would disturb him.
-            if(!ANAIScalculationAllowed && !maintainANAISinhibition) ANAIScalculationAllowed = true;
+            //if(!ANAIScalculationAllowed && !gravityAssistDetected) ANAIScalculationAllowed = true;
+            ANAIScalculationAllowed = true; // Forced to true since the player now has the control over this through the control panel
         }
         else
         {
@@ -262,10 +281,10 @@ public class AnaisDataSet
 
         // CHECK IF WE ARE ON ENCOUNTER MODE (Player is practically on an encounter trajectory)
         // ---------------------------------
-        if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && ANAIScalculationAllowed)
+        if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && ANAIScalculationAllowed && _settings._showTransfer)
         {
             // calculate the transfer for the memorized encounter date
-            _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet);
+            _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet, _settings._transferType);
             _anaisTransfer.calculateTransfer(_timeNow, encounterDate);
 
             // check if we are still on an encounter trajectory - if not, we exit that mode
@@ -285,10 +304,10 @@ public class AnaisDataSet
 
         // CALCULATE ANAIS TRANSFER (if not in final approach / on encounter trajectory mode, and if the configurations is compatible with ANAIS)
         // ------------------------
-        if (!_finalApproachMode && !iscurrentlyOnEncounterTrajectory && (isRendezVousTrajectory || isReturnToMotherPlanet) && ANAIScalculationAllowed)
+        if (!_finalApproachMode && !iscurrentlyOnEncounterTrajectory && (isRendezVousTrajectory || isReturnToMotherPlanet) && ANAIScalculationAllowed && _settings._showTransfer)
         {
             // Calculate the ANAIS transfer
-            _anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, _targetPlanet, _timeNow);
+            _anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, _targetPlanet, _timeNow, _settings._transferType);
 
             // If the calculation is successful, check if we are on encounter mode
             if ((_anaisTransfer != null) && _anaisTransfer.isValid() && isRendezVousTrajectory && (_anaisTransfer.dv_start < AnaisManager.C_DELTAV_THRESHOLD_ENTER_ENCOUNTER_MODE))
@@ -335,7 +354,7 @@ public class AnaisDataSet
 
                     // Calculate the closest approach - if this trajectory is not already handled by ANAIS
                     // ------------------------------
-                    if(!isHandledByANAIS)
+                    if(!isHandledByANAIS && (_settings._nbMaxTurns > 0))
                     {
                         ClosestApproachCalculator.T_ApproachData currentApproachData = ClosestApproachCalculator.CalculateClosestApproach(_listPlayerOrbits[i_playerOrbit], targetOrbit, Math.Max(_timeNow, _listPlayerOrbits[i_playerOrbit].orbitStartTime));
 
@@ -355,7 +374,7 @@ public class AnaisDataSet
                         // Calculate the closest approach over several turns (skip if this is the trajectory handled by ANAIS and we are close to getting an encounter)
                         if (!isHandledByANAIS || !iscurrentlyOnEncounterTrajectory)
                         {
-                            ClosestApproachCalculator.CalculateClosestApproach_MultiTurn(_listPlayerOrbits[i_playerOrbit], targetOrbit, _approachData_singleTurn, Math.Max(_timeNow, _listPlayerOrbits[i_playerOrbit].orbitStartTime), out _approachData_multiTurn_1, out _nbTurns1, ref preferredTimeOfArrivalAtNode1, out _approachData_multiTurn_2, out _nbTurns2, ref preferredTimeOfArrivalAtNode2);
+                            ClosestApproachCalculator.CalculateClosestApproach_MultiTurn(_listPlayerOrbits[i_playerOrbit], targetOrbit, _approachData_singleTurn, Math.Max(_timeNow, _listPlayerOrbits[i_playerOrbit].orbitStartTime), out _approachData_multiTurn, out _nbTurns, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2, _settings._nbMaxTurns, _settings._preferredNode);
                         }
 
                         break;
@@ -365,16 +384,10 @@ public class AnaisDataSet
         }
 
         // Reset the closest approach lines data if nothing was calculated
-        if (_approachData_multiTurn_1.validity == false)
+        if (_approachData_multiTurn.validity == false)
         {
             preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
-            _nbTurns1 = 0;
-        }
-
-        if (_approachData_multiTurn_2.validity == false)
-        {
-            preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
-            _nbTurns2 = 0;
+            _nbTurns = 0;
         }
 
         // This is to return if the data has been calculated or not
@@ -465,7 +478,17 @@ public class AnaisDataSet
                 MapDrawer.DrawPointWithText(15, textColor, startLabel, 40, textColor, MapDrawer.GetPosition(locationStart), locationStart.position.normalized, 4, 4);
             }
 
-            MapDrawer.DrawPointWithText(15, textColor, endLabel, 40, textColor, MapDrawer.GetPosition(locationEnd), locationEnd.position.normalized, 4, 4);
+            if(_settings._transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
+            {
+                // Rendez-vous mode: Show the arrival point and the arrival delta-V
+                MapDrawer.DrawPointWithText(15, textColor, endLabel, 40, textColor, MapDrawer.GetPosition(locationEnd), locationEnd.position.normalized, 4, 4);
+            }
+            else
+            {
+                // Fly-by mode: only show the arrival point
+                MapDrawer.DrawPoint(15, textColor, MapDrawer.GetPosition(locationEnd), 4, true, 4);
+            }
+            
             transferOrbit.DrawDashed(drawStats: false, drawStartText: false, drawEndText: false, lineColor);
 
             if (ejectionOrbit != null)
@@ -495,34 +518,32 @@ public class AnaisDataSet
                 Drawing_Utils.DrawDashedLine(_approachData_singleTurn.locPlayer.planet, _approachData_singleTurn.locPlayer, _approachData_singleTurn.locTarget, C_LightBlue_Color, null, closestApproachText);
             }
 
-            // Approach line on multi-turns (1)
-            if (_approachData_multiTurn_1.validity)
+            // Approach line on multi-turns
+            if (_approachData_multiTurn.validity)
             {
-                if ((_targetPlanet != null) && (_approachData_multiTurn_1.dist < _targetPlanet.SOI))
+                Color lineColor;
+
+                if ((_targetPlanet != null) && (_approachData_multiTurn.dist < _targetPlanet.SOI))
                 {
-                    closestApproachText = "Encounter (" + _nbTurns1 + " turns)";
+                    closestApproachText = "Encounter";
                 }
                 else
                 {
-                    closestApproachText = "Best approach (" + _nbTurns1 + " turns)";
+                    closestApproachText = "Best approach";
                 }
 
-                Drawing_Utils.DrawDashedLine(_approachData_multiTurn_1.locPlayer.planet, _approachData_multiTurn_1.locPlayer, _approachData_multiTurn_1.locTarget, C_LightGreen_Color, null, closestApproachText);
-            }
-
-            // Approach line on multi-turns (2)
-            if (_approachData_multiTurn_2.validity)
-            {
-                if ((_targetPlanet != null) && (_approachData_multiTurn_2.dist < _targetPlanet.SOI))
+                if(_nbTurns > 1)
                 {
-                    closestApproachText = "Encounter (" + _nbTurns2 + " turns)";
+                    closestApproachText += " (" + _nbTurns + " turns)";
+                    lineColor = C_LightGreen_Color;
                 }
                 else
                 {
-                    closestApproachText = "Best approach (" + _nbTurns2 + " turns)";
+                    closestApproachText += " (next pass)";
+                    lineColor = C_LightBlue_Color;
                 }
 
-                Drawing_Utils.DrawDashedLine(_approachData_multiTurn_2.locPlayer.planet, _approachData_multiTurn_2.locPlayer, _approachData_multiTurn_2.locTarget, C_LightGreen_Color, null, closestApproachText);
+                Drawing_Utils.DrawDashedLine(_approachData_multiTurn.locPlayer.planet, _approachData_multiTurn.locPlayer, _approachData_multiTurn.locTarget, lineColor, null, closestApproachText);
             }
         }
     }
@@ -594,16 +615,16 @@ public class AnaisDataSet
         _listPlayerOrbits.Clear();
         _listTarget.Clear();
         _targetPlanet = null;
+        _settings.SetDefaultValues();
+        _NavVariables.Reset();
 
         // Output data
         _finalApproachMode = false;
         _approachData_finalApproach.validity = false;
         _anaisTransfer = null;
         _approachData_singleTurn.validity = false;
-        _approachData_multiTurn_1.validity = false;
-        _approachData_multiTurn_2.validity = false;
-        _nbTurns1 = 0;
-        _nbTurns2 = 0;
+        _approachData_multiTurn.validity = false;
+        _nbTurns = 0;
         _entryInTargetSOIdetected = false;
     }
 

@@ -158,9 +158,6 @@ class AnaisManager
     private static readonly object AnaisInputDataLock  = new object();
     private static readonly object AnaisOutputDataLock = new object();
 
-    // The instance of AnaisManager
-    private static AnaisManager instance = new AnaisManager();
-
 
     // INTERNAL DATA (this is meant to be used by the ANAIS task only)
     // This is used to keep track of some sort of global variables implied in the calculations
@@ -263,7 +260,6 @@ class AnaisManager
             return anaisOutputDataSet.getVelocityArrowData(out isInFinalApproachMode, out approachData, out startingVelocity, out entrySOIdetected);
         }
     }
-
 
     // ANAIS TASK MANAGEMENT
     // ---------------------

@@ -165,7 +165,7 @@ class AnaisTransferCalculator
 
     // FUNCTION THAT COMPUTES A LIST OF TRANSFERS EVENLY DISPATCHED IN TERMS OF ARRIVAL TIME
     // -------------------------------------------------------------------------------------
-    public static List<AnaisTransfer> calculateTransferList(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double start_time, double arrival_time_start_window, double arrival_time_end_window)
+    public static List<AnaisTransfer> calculateTransferList(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double start_time, double arrival_time_start_window, double arrival_time_end_window, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         const uint C_TIME_INTERVALS_PER_PERIOD = 12; // On a full period of target object, the time window would be splitted in that many periods
         
@@ -182,7 +182,7 @@ class AnaisTransferCalculator
 
         for(int i = 0; i < nbTimeIntervals + 1; i++)
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
 
             // calculate a transfer for that arrival time
             double arrival_time = arrival_time_start_window + i * time_interval;
@@ -203,7 +203,7 @@ class AnaisTransferCalculator
         // Insert a transfer close to the first bound
         // ------------------------------------------
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
 
             double arrival_time = arrival_time_start_window + time_interval / 8.0;
             anaisTransfer.calculateTransfer(start_time, arrival_time);
@@ -219,7 +219,7 @@ class AnaisTransferCalculator
         // Insert a transfer close to the last bound
         // ------------------------------------------
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
 
             double arrival_time = arrival_time_end_window - time_interval / 8.0;
             anaisTransfer.calculateTransfer(start_time, arrival_time);
@@ -238,7 +238,7 @@ class AnaisTransferCalculator
 
     // CALCULATES THE OPTIMAL TRANSFER WITHIN THE SPECIFIED TIME RANGE
     // ---------------------------------------------------------------
-    public static AnaisTransfer calculateAnaisTransferForArrivalTimeRange(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double departureTime, double start_arrivalTime, double end_arrivalTime)
+    public static AnaisTransfer calculateAnaisTransferForArrivalTimeRange(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double departureTime, double start_arrivalTime, double end_arrivalTime, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         // Controls
         // --------
@@ -251,7 +251,7 @@ class AnaisTransferCalculator
         // --------------------------------------------------------------------------------------------
         LOG(LOG_LEVEL.DEBUG, "  Building transfer list");
 
-        List<AnaisTransfer> anaisTransferList = calculateTransferList(playerOrbit, targetOrbit, targetPlanet, departureTime, start_arrivalTime, end_arrivalTime);
+        List<AnaisTransfer> anaisTransferList = calculateTransferList(playerOrbit, targetOrbit, targetPlanet, departureTime, start_arrivalTime, end_arrivalTime, transferType);
 
         if (anaisTransferList.Count == 0) return null; // safety check
 
@@ -268,16 +268,16 @@ class AnaisTransferCalculator
 
         // Search for a minimum
         // --------------------
-        double dvMini = anaisTransferList[0].total_dv;
+        double dvMini = anaisTransferList[0].GetDeltaV_valueToMinimize(transferType);
         int i_dvMini = 0;
 
         for (int i = 1; i < anaisTransferList.Count; i++)
         {
-            LOG(LOG_LEVEL.DEBUG, "AnaisTransfer[" + i + "] : t = " + anaisTransferList[i].arrivalTime + "; dv = " + anaisTransferList[i].total_dv);
+            LOG(LOG_LEVEL.DEBUG, "AnaisTransfer[" + i + "] : t = " + anaisTransferList[i].arrivalTime + "; dv = " + anaisTransferList[i].GetDeltaV_valueToMinimize(transferType));
 
-            if (anaisTransferList[i].total_dv < dvMini)
+            if (anaisTransferList[i].GetDeltaV_valueToMinimize(transferType) < dvMini)
             {
-                dvMini = anaisTransferList[i].total_dv;
+                dvMini = anaisTransferList[i].GetDeltaV_valueToMinimize(transferType);
                 i_dvMini = i;
             }
         }
@@ -289,14 +289,14 @@ class AnaisTransferCalculator
         }
         else
         {
-            LOG(LOG_LEVEL.DEBUG, "  Minimum found at position " + i_dvMini + "; total ΔV = " + anaisTransferList[i_dvMini].total_dv);
+            LOG(LOG_LEVEL.DEBUG, "  Minimum found at position " + i_dvMini + "; target ΔV = " + anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType));
         }
 
         // Search for a more accurate minimum around the located minimum
         // -------------------------------------------------------------
-        NumericalMinimumCalculator minCalculator = NumericalMinimumCalculator.createInstance(anaisTransferList[i_dvMini - 1].arrivalTime, anaisTransferList[i_dvMini - 1].total_dv,
-                                                                                             anaisTransferList[i_dvMini].arrivalTime    , anaisTransferList[i_dvMini].total_dv,
-                                                                                             anaisTransferList[i_dvMini + 1].arrivalTime, anaisTransferList[i_dvMini + 1].total_dv);
+        NumericalMinimumCalculator minCalculator = NumericalMinimumCalculator.createInstance(anaisTransferList[i_dvMini - 1].arrivalTime, anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType),
+                                                                                             anaisTransferList[i_dvMini].arrivalTime    , anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType),
+                                                                                             anaisTransferList[i_dvMini + 1].arrivalTime, anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType));
 
         if(minCalculator == null)
         {
@@ -318,7 +318,7 @@ class AnaisTransferCalculator
             double newArrivalTime = minCalculator.calculateNewGuess();
 
             // Calculate the transfer at new date
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
             anaisTransfer.calculateTransfer(departureTime, newArrivalTime);
 
             if (anaisTransfer.transferOrbit == null)
@@ -328,10 +328,10 @@ class AnaisTransferCalculator
             }
             
             // memorize the best transfer
-            if (anaisTransfer.total_dv < bestAnaisTransfer.total_dv) bestAnaisTransfer = anaisTransfer;
+            if (anaisTransfer.GetDeltaV_valueToMinimize(transferType) < bestAnaisTransfer.GetDeltaV_valueToMinimize(transferType)) bestAnaisTransfer = anaisTransfer;
 
             // Insert appropriately the new transfer in the calculator data
-            bool isOK = minCalculator.insertNewPoint(anaisTransfer.arrivalTime, anaisTransfer.total_dv);
+            bool isOK = minCalculator.insertNewPoint(anaisTransfer.arrivalTime, anaisTransfer.GetDeltaV_valueToMinimize(transferType));
 
             if (!isOK)
             {
@@ -365,7 +365,7 @@ class AnaisTransferCalculator
 
     // MAIN FUNCTION
     // -------------
-    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double timeNow)
+    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double timeNow, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
         LOG(LOG_LEVEL.DEBUG, "---   NEW ANAIS TRANSFER CALCULATION    ---");
@@ -375,7 +375,7 @@ class AnaisTransferCalculator
         if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))
         {
             // Return to mother planet
-            AnaisTransfer anaisReturnTransfer = new AnaisTransfer(playerOrbit, null, targetPlanet); // No destination orbit in this case
+            AnaisTransfer anaisReturnTransfer = new AnaisTransfer(playerOrbit, null, targetPlanet, transferType); // No destination orbit in this case
 
             anaisReturnTransfer.calculateReturnToPlanet(timeNow);
 
@@ -420,7 +420,7 @@ class AnaisTransferCalculator
 
         // Calculate the optimal transfer on that time range
         // -------------------------------------------------
-        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, timeNow, startTime, endTime);
+        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, timeNow, startTime, endTime, transferType);
         return newAnaisTransfer;
     }
 

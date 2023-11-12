@@ -30,11 +30,13 @@ class AnaisTransfer
 
     public double transfer_efficiency;
 
+    public ANAIS_Settings.E_TRANSFER_TYPE transferType;
+
     // data for when the transfer starts from a child planet
     bool needsToCalculateExitTrajectory = false;
     public Orbit childTransferOrbit = null;
 
-    public AnaisTransfer(Orbit _originOrbit, Orbit _destinationOrbit, Planet _targetPlanet)
+    public AnaisTransfer(Orbit _originOrbit, Orbit _destinationOrbit, Planet _targetPlanet, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         originOrbit = _originOrbit;
         destinationOrbit = _destinationOrbit;
@@ -53,11 +55,18 @@ class AnaisTransfer
         // data for a possible exit trajectory
         needsToCalculateExitTrajectory = false;
         childTransferOrbit = null;
+        this.transferType = transferType;
     }
 
     public Double2 GetDeltaV_start()
     {
         return deltaV_start;
+    }
+
+    public double GetDeltaV_valueToMinimize(ANAIS_Settings.E_TRANSFER_TYPE transferType)
+    {
+        if (transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS) return total_dv;
+        else return dv_start;
     }
 
     private bool checkPlanetaryConfiguration()
@@ -214,15 +223,23 @@ class AnaisTransfer
             // global deltaV and efficiency
             total_dv = dv_start + dv_end;
 
-            if (total_dv > 1.0)
+            if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
             {
-                transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
+                if (total_dv > 1.0)
+                {
+                    transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
+                }
+                else
+                {
+                    // not significant
+                    transfer_efficiency = 1.0;
+                }
             }
             else
             {
-                // not significant
-                transfer_efficiency = 1.0;
+                transfer_efficiency = start_transfer_eff;
             }
+            
 
             LOG(LOG_LEVEL.DEBUG, "  calculateTransferInSameSOI: Transfer calculated with success");
             LOG(LOG_LEVEL.DEBUG, "    ΔVstart = " + dv_start + "; ΔVend = " + dv_end);
@@ -401,15 +418,23 @@ class AnaisTransfer
         start_transfer_eff = start_transfer_eff * start_main_transfer_eff;
         end_transfer_eff = end_main_transfer_eff; // the planet insertion efficiency is supposed to be 1 if target is a planet, so no multiplication to make
 
-        if (total_dv > 1.0)
+        if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
         {
-            transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
+            if (total_dv > 1.0)
+            {
+                transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
+            }
+            else
+            {
+                // not significant
+                transfer_efficiency = 1.0;
+            }
         }
         else
         {
-            // not significant
-            transfer_efficiency = 1.0;
+            transfer_efficiency = start_transfer_eff;
         }
+        
     }
 
 
@@ -567,13 +592,20 @@ class AnaisTransfer
 
         total_dv = dv_start + dv_end;
 
-        if(total_dv > 1.0)
+        if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
         {
-            transfer_efficiency = (startEfficiency * dv_start + dv_end) / total_dv;
+            if (total_dv > 1.0)
+            {
+                transfer_efficiency = (startEfficiency * dv_start + dv_end) / total_dv;
+            }
+            else
+            {
+                transfer_efficiency = 1.0; // not significant
+            }
         }
         else
         {
-            transfer_efficiency = 1.0; // not significant
+            transfer_efficiency = startEfficiency;
         }
         
     }
