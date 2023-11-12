@@ -76,3 +76,5 @@ public class MapNavigation_Patch
 		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, level, message);
 	}
 }
+
+

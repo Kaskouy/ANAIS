@@ -14,5 +14,7 @@ public class WorldView_Update_Patch
 	public static void Update_postfix()
 	{
 		AnaisManager.setIsGameRunning();
-	}
+
+		ANAIS_Panel.ANAIS_PanelEventListener.CheckEvent();
+    }
 }
