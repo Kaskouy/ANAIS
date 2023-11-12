@@ -32,6 +32,11 @@ static class Orbit_Utils
         return orbit.meanMotion; // HACK: mean motion is stored in this variable that I don't use otherwise
     }
 
+	public static bool isInSameSOIas(this Orbit orbit, Orbit otherOrbit)
+	{
+		return (orbit.Planet == otherOrbit.Planet);
+	}
+
     public static Orbit CreateOrbit(double slr, double ecc, double argOfPeriapsis, int direction, Planet planet, PathType pathType, Planet nextPlanet)
     {
 		if (slr < C_MINIMAL_ORBIT_SLR)
