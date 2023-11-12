@@ -852,7 +852,7 @@ public class ClosestApproachCalculator
         }
 	}
 
-	private static void calculateBestApproachOverSeveralTurnsAtNode(Orbit orbit_A, Orbit orbit_B, double start_time, double nodeArg, uint nbMaxTurns, uint preferredNbTurns, out T_ApproachData bestApproachData, out uint nbTurns)
+	private static void calculateBestApproachOverSeveralTurnsAtNode(Orbit orbit_A, Orbit orbit_B, double start_time, double nodeArg, uint nbMaxTurns, uint preferredNbTurns, out T_ApproachData bestApproachData, out uint nbTurns, out double bestCost)
     {
 		// Initialization
 		bestApproachData = new T_ApproachData();
@@ -863,20 +863,23 @@ public class ClosestApproachCalculator
 		// Each calculated approach will be associated to a cost, and the approach with the lower cost will be considered the most suitable.
 		// The cost takes into account the distance found and the number of turns ahead. It's compound of a time cost, proportional to the number of turns
 		// in order to discourage high number of turns, and a deltaV cost equal to dist / nbTurns in order to encourage low delta-V transfers
-		const double COST_PER_NB_OF_TURNS_ANGLE = 1.0 * Math.PI / 180.0; // 1 degree
+		double COST_PER_NB_OF_TURNS_ANGLE = 1.0 * Math.PI / 180.0 * 12.0 / nbMaxTurns; // 1 degree for 12 turns
 		double costPerNbOfTurns = orbit_A.GetRadiusAtAngle(nodeArg) * COST_PER_NB_OF_TURNS_ANGLE;
 
 		double timeCost = 2.0 * costPerNbOfTurns;
 		double currentCost = 0.0;
-		double bestCost = 0.0;
+		bestCost = 0.0;
 
 		// A bonus is applied to the memorized number of turns to avoid switching too much between equivalent transfers in terms of cost
 		const double PREFERRED_NB_TURNS_MULTIPLICATOR = 0.85;
 
+		// The number of turns from which we start calculating
+		const uint C_FIRST_TURN = 2;
+
 		double curStartTime = start_time + orbit_A.period; // to start after one period
 		bool continueSearch = true;
 
-		for (uint i_turn = 2; continueSearch && (i_turn <= nbMaxTurns); i_turn++)
+		for (uint i_turn = C_FIRST_TURN; continueSearch && (i_turn <= nbMaxTurns); i_turn++)
 		{
 			T_ApproachData curApproachData = GetApproachAtArgument(orbit_A, orbit_B, curStartTime, nodeArg);
 
@@ -892,7 +895,7 @@ public class ClosestApproachCalculator
 			}
 
 			// Memorize the approach if it's the best found until now (i.e. associated to the lowest cost)
-			if ((i_turn == 2) || (currentCost < bestCost))
+			if ((i_turn == C_FIRST_TURN) || (currentCost < bestCost))
 			{
 				nbTurns = i_turn;
 				bestApproachData = curApproachData;
@@ -913,18 +916,15 @@ public class ClosestApproachCalculator
 		LOG(LOG_LEVEL.DEBUG, "  Turn " + nbTurns + " is the best: total cost = " + bestCost);
 	}
 
-	public static void CalculateClosestApproach_MultiTurn(Orbit orbit_A, Orbit orbit_B, T_ApproachData closestApproach, double begin_time, out T_ApproachData bestApproachData1, out uint nbTurns1, ref double preferredTimeOfArrivalAtNode1,out T_ApproachData bestApproachData2, out uint nbTurns2, ref double preferredTimeOfArrivalAtNode2)
+	public static void CalculateClosestApproach_MultiTurn(Orbit orbit_A, Orbit orbit_B, T_ApproachData closestApproach, double begin_time, out T_ApproachData bestApproachData, out uint nbTurns, ref double preferredTimeOfArrivalAtNode1, ref double preferredTimeOfArrivalAtNode2, uint nbMaxTurns, ANAIS_Settings.E_PREFERRED_NODE preferredNode)
     {
-		// Check that both orbits have no encounter/escape event scheduled
-		if ( (orbit_A.pathType != PathType.Eternal) || (orbit_B.pathType != PathType.Eternal))
+        // Check that both orbits have no encounter/escape event scheduled
+        if ( (orbit_A.pathType != PathType.Eternal) || (orbit_B.pathType != PathType.Eternal))
         {
 			// return invalid data
-			bestApproachData1 = new T_ApproachData();
-			bestApproachData1.validity = false;
-            nbTurns1 = 0;
-            bestApproachData2 = new T_ApproachData();
-            bestApproachData2.validity = false;
-            nbTurns2 = 0;
+			bestApproachData = new T_ApproachData();
+			bestApproachData.validity = false;
+            nbTurns = 0;
 			preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
             preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
             return;
@@ -944,17 +944,29 @@ public class ClosestApproachCalculator
 			if (Math.Abs(RB - RA) > 0.05 * RB) 
             {
                 // return invalid data
-                bestApproachData1 = new T_ApproachData();
-                bestApproachData1.validity = false;
-                nbTurns1 = 0;
-                bestApproachData2 = new T_ApproachData();
-                bestApproachData2.validity = false;
-                nbTurns2 = 0;
+                bestApproachData = new T_ApproachData();
+                bestApproachData.validity = false;
+                nbTurns = 0;
                 preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
                 preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
                 return;
 			}
 		}
+		else
+		{
+			// if the orbits intersect, by convention the node 1 is the ascending node; swap the angles if needed
+			double trueAnomaly1 = Orbit_Utils.NormalizeAngle(angleIntersection1 - orbit_A.arg);
+            double trueAnomaly2 = Orbit_Utils.NormalizeAngle(angleIntersection2 - orbit_A.arg);
+
+			if(((orbit_A.direction > 0) && (trueAnomaly1 < trueAnomaly2)) ||  // positive direction: ascending node should have positive true anomaly, descending node a negative one
+               ((orbit_A.direction < 0) && (trueAnomaly1 > trueAnomaly2))   ) // negative direction: the opposite
+
+            {
+				double tempVar = angleIntersection2;
+                angleIntersection2 = angleIntersection1;
+                angleIntersection1 = tempVar;
+            }
+        }
 
 		// Calculate start time (can be now if it's about the current trajectory, or in the future if it's an anticipated trajectory)
 		// --------------------
@@ -965,21 +977,22 @@ public class ClosestApproachCalculator
 			start_time = orbit_A.orbitStartTime;
 		}
 
-		const uint NB_MAX_TURNS = 12;
-
-		// Initialization
-		bestApproachData1 = new T_ApproachData();
-		bestApproachData2 = new T_ApproachData();
+        // Initialization
+        T_ApproachData bestApproachData1 = new T_ApproachData();
+        T_ApproachData bestApproachData2 = new T_ApproachData();
 		bestApproachData1.validity = false;
 		bestApproachData2.validity = false;
-		nbTurns1 = nbTurns2 = 0;
+		uint nbTurns1 = 0;
+		uint nbTurns2 = 0;
+		double cost1 = 0.0;
+		double cost2 = 0.0;
 
-		bool calculateApproach1 = MustCalculateMultiTurnApproachAtnode(angleIntersection1, closestApproach);
-		bool calculateApproach2 = intersects && MustCalculateMultiTurnApproachAtnode(angleIntersection2, closestApproach); // if the orbits don't intersect we only keep the first point
+		//bool calculateApproach1 = MustCalculateMultiTurnApproachAtnode(angleIntersection1, closestApproach);
+		//bool calculateApproach2 = intersects && MustCalculateMultiTurnApproachAtnode(angleIntersection2, closestApproach); // if the orbits don't intersect we only keep the first point
 
 		// Calculate approach at node 1 on each turn and memorize the best (if calculation needed)
 		// ---------------------------------------------------------------
-		if (calculateApproach1)
+		if (preferredNode != ANAIS_Settings.E_PREFERRED_NODE.DESCENDING)
         {
 			// Evaluate the current preferred number of turns from the preferred arrival date for this node
 			uint preferredNbTurnsNode1 = 0;
@@ -991,8 +1004,9 @@ public class ClosestApproachCalculator
             // else... preferredNbTurnsNode1 will be 0 and will just be ignored
 
             LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 1 - preferred nb turns = " + preferredNbTurnsNode1);
-			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection1, NB_MAX_TURNS, preferredNbTurnsNode1, out bestApproachData1, out nbTurns1);
-		}
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection1, nbMaxTurns, preferredNbTurnsNode1, out bestApproachData1, out nbTurns1, out cost1);
+            LOG(LOG_LEVEL.DEBUG, "--- Calculated approach at node 1 - nb turns = " + nbTurns1 + "; cost1 = " + cost1);
+        }
 
         // Update preferred time of arrival (in case it changed)
         if (bestApproachData1.validity)
@@ -1008,7 +1022,7 @@ public class ClosestApproachCalculator
 
         // Calculate approach at node 2 on each turn and memorize the best (if calculation needed)
         // ---------------------------------------------------------------
-        if (calculateApproach2)
+        if (intersects && (preferredNode != ANAIS_Settings.E_PREFERRED_NODE.ASCENDING))
 		{
 			// Evaluate the current preferred number of turns from the preferred arrival date for this node
             uint preferredNbTurnsNode2 = 0;
@@ -1020,8 +1034,9 @@ public class ClosestApproachCalculator
             // else... preferredNbTurnsNode2 will be 0 and will just be ignored
 
             LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - preferred nb turns = " + preferredNbTurnsNode2);
-			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection2, NB_MAX_TURNS, preferredNbTurnsNode2, out bestApproachData2, out nbTurns2);
-		}
+			calculateBestApproachOverSeveralTurnsAtNode(orbit_A, orbit_B, start_time, angleIntersection2, nbMaxTurns, preferredNbTurnsNode2, out bestApproachData2, out nbTurns2, out cost2);
+            LOG(LOG_LEVEL.DEBUG, "--- Calculated approach at node 2 - nb turns = " + nbTurns2 + "; cost2 = " + cost2);
+        }
 
         // Update preferred time of arrival (in case it changed)
         if (bestApproachData2.validity)
@@ -1032,6 +1047,90 @@ public class ClosestApproachCalculator
         {
             LOG(LOG_LEVEL.DEBUG, "--- Calculating approach at node 2 - Calculation skipped/failed, reset preferred arrival time");
             preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
+        }
+
+		// Select the best approach from the 2 nodes
+		// -----------------------------------------
+		if(preferredNode == ANAIS_Settings.E_PREFERRED_NODE.ANY)
+		{
+			if(bestApproachData1.validity && bestApproachData2.validity)
+			{
+				if(cost1 < cost2)
+				{
+                    // node 1 is the best
+                    LOG(LOG_LEVEL.DEBUG, "--- preferred node = ANY; selected ascending node");
+                    bestApproachData = bestApproachData1;
+                    nbTurns = nbTurns1;
+                }
+				else
+				{
+                    // node 2 is the best
+                    LOG(LOG_LEVEL.DEBUG, "--- preferred node = ANY; selected descending node");
+                    bestApproachData = bestApproachData2;
+					nbTurns = nbTurns2;
+                }
+			}
+			else
+			{
+				if (bestApproachData1.validity) 
+				{ 
+					// Node 1 is the only available
+					bestApproachData = bestApproachData1;
+                    nbTurns = nbTurns1;
+                }
+				else if (bestApproachData2.validity) 
+				{
+                    // Node 2 is the only available
+					bestApproachData = bestApproachData2;
+                    nbTurns = nbTurns2;
+                }
+				else
+				{
+					bestApproachData = new T_ApproachData();
+                    bestApproachData.validity = false;
+					nbTurns = 0;
+                }
+			}
+		}
+		else if((preferredNode == ANAIS_Settings.E_PREFERRED_NODE.ASCENDING) && bestApproachData1.validity)
+		{
+			// Node 1 is chosen
+			bestApproachData = bestApproachData1;
+            nbTurns = nbTurns1;
+        }
+		else if((preferredNode == ANAIS_Settings.E_PREFERRED_NODE.DESCENDING) && bestApproachData2.validity)
+		{
+            // Node 2 is chosen
+            bestApproachData = bestApproachData2;
+            nbTurns = nbTurns2;
+        }
+		else
+		{
+            // No valid approach data can be returned
+            bestApproachData = new T_ApproachData();
+            bestApproachData.validity = false;
+            nbTurns = 0;
+        }
+
+        // Calculate more accurately the closest approach around the found date
+        // ----------------------------------------------
+		if(bestApproachData.validity) 
+		{
+            double min_period = Math.Min(orbit_A.period, orbit_B.period);
+
+			double startTimeForAccurateCalculation = bestApproachData.date - 0.4 * min_period;
+			double endTimeForAccurateCalculation = bestApproachData.date + 0.4 * min_period;
+
+            T_ApproachData accurateBestApproachData = new T_ApproachData();
+            accurateBestApproachData.validity = false;
+            accurateBestApproachData.dist = Double.PositiveInfinity;
+
+            accurateBestApproachData = CalculateClosestApproachOnPeriod(orbit_A, orbit_B, startTimeForAccurateCalculation, endTimeForAccurateCalculation, min_period);
+
+            if (accurateBestApproachData.validity)
+            {
+                bestApproachData = accurateBestApproachData;
+            }
         }
     }
 
