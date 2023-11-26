@@ -81,7 +81,7 @@ class NumericalMinimumCalculator
         if((x1 < x2) && (x2 < x3))
         {
             // Check that point 2 is minimal
-            if((y2 < y1) && (y2 < y3))
+            if(!(y2 > y1) && !(y2 > y3))
             {
                 ok = true;
             }

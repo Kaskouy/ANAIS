@@ -32,7 +32,7 @@ class AnaisTransferCalculator
     }
 
 
-    public static bool computeTimeRangeAroundTimeOfArrival(Orbit playerOrbit, Orbit targetOrbit, double timeNow, double arrivalDate, double playerArg, out double startTime, out double endTime)
+    public static bool computeTimeRangeAroundTimeOfArrival(Orbit playerOrbit, Orbit targetOrbit, double timeNow, double arrivalDate, double playerArg, double minimalStartTime, out double startTime, out double endTime)
     {
         const double C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG = 0.001; // radians - approximately 3 minutes of arc; we'll always make sure to never calculate a rectilinear transfer
         const double C_MIN_DELAY_BEYOND_START_TIME = 60.0;
@@ -48,13 +48,19 @@ class AnaisTransferCalculator
             endTime += targetOrbit.period;
         }
 
-        LOG(LOG_LEVEL.DEBUG, "   Calculate startTime at arg = " + (playerArg + C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction) + "; start time = now + " + (startTime - WorldTime.main.worldTime));
-        LOG(LOG_LEVEL.DEBUG, "   Calculate endTime at arg = " + (playerArg - C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction) + "; end time = now + " + (endTime - WorldTime.main.worldTime));
+        LOG(LOG_LEVEL.DEBUG, "   Calculate startTime at arg = " + (playerArg + C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction) + "; start time = now + " + (startTime - timeNow));
+        LOG(LOG_LEVEL.DEBUG, "   Calculate endTime at arg = " + (playerArg - C_MIN_DIFF_ANGLE_WITH_PLAYER_ARG * targetOrbit.direction) + "; end time = now + " + (endTime - timeNow));
 
-        double minStartTime = timeNow + C_MIN_DELAY_BEYOND_START_TIME;
-        if (startTime < minStartTime) startTime = minStartTime;
+        // Make sure the start time isn't below a minimal value to avoid excessively energetic transfers
+        if(startTime < minimalStartTime) startTime = minimalStartTime;
+
+        // Ultimate security over start time
+        double ultimateMinStartTime = timeNow + C_MIN_DELAY_BEYOND_START_TIME;
+        if (startTime < ultimateMinStartTime) startTime = ultimateMinStartTime;
 
         if(endTime > targetOrbit.orbitEndTime) endTime = targetOrbit.orbitEndTime;
+
+        LOG(LOG_LEVEL.DEBUG, "   Final search window: startTime = now + " + (startTime - timeNow) + " - endTime = now + " + (endTime - timeNow));
 
         return (startTime < endTime);
     }
@@ -84,6 +90,7 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "  computeTimeRangeForAnaisTransferCalculation:   Intersection B at argument " + angleB + "; time of next player arrival = " + timeOfPlayerPassageB);
 
             double bestTimeOfPassageTarget;
+            double minimumTransferDelay = 0.0;
 
             if((timeOfPlayerPassageA > timeNow) && (timeOfPlayerPassageB > timeNow))
             {
@@ -106,21 +113,25 @@ class AnaisTransferCalculator
                 if (Math.Abs(deltaTimeA) < Math.Abs(deltaTimeB))
                 {
                     bestTimeOfPassageTarget = timeOfTargetPassageA;
+                    minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 4.0;
                 }
                 else
                 {
                     bestTimeOfPassageTarget = timeOfTargetPassageB;
+                    minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 4.0;
                 }
             }
             else if(timeOfPlayerPassageA > timeNow)
             {
                 // Passage of player at intersection B is in the past (if the orbit is hyperbolic, so it only happens once) --> search around passage at intersection A
                 bestTimeOfPassageTarget = getClosestPassageTimeAtArg(targetOrbit, timeOfPlayerPassageA, angleA);
+                minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 4.0;
             }
             else if(timeOfPlayerPassageB > timeNow)
             {
                 // Passage of player at intersection A is in the past (if the orbit is hyperbolic, so it only happens once) --> search around passage at intersection B
                 bestTimeOfPassageTarget = getClosestPassageTimeAtArg(targetOrbit, timeOfPlayerPassageB, angleB);
+                minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 4.0;
             }
             else
             {
@@ -130,8 +141,11 @@ class AnaisTransferCalculator
 
             LOG(LOG_LEVEL.DEBUG, "Best passage time of target = " + bestTimeOfPassageTarget);
 
+            // Calculate the minimal start time (to avoid excessively energetic transfers that are difficult to calculate and aren't viable anyway)
+            double minimal_start_time = timeNow + minimumTransferDelay;
+
             // Compute a time range around the best time of passage
-            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, bestTimeOfPassageTarget, playerArg, out startTime, out endTime);
+            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, bestTimeOfPassageTarget, playerArg, minimal_start_time, out startTime, out endTime);
         }
         else
         {
@@ -157,11 +171,42 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "  Passage time of player at ref point = " + playerArrivalDate);
             LOG(LOG_LEVEL.DEBUG, "  Closest passage time of target at ref point = " + timeOfTargetPassageAtRefPoint + " (orbital period = " + targetOrbit.period + ")");
 
+            // Calculate the minimal start time (to avoid excessively energetic transfers that are difficult to calculate and aren't viable anyway)
+            double minimal_start_time = timeNow + (hohmannTransfer.orbitEndTime - timeNow) / 4.0;
+
             // Compute a time range around the best time of passage
-            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, timeOfTargetPassageAtRefPoint, playerArg, out startTime, out endTime);
+            return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, timeOfTargetPassageAtRefPoint, playerArg, minimal_start_time, out startTime, out endTime);
         }
     }
 
+    public static double GetMaxTransferStartingVelocity(Orbit playerOrbit, Orbit targetOrbit, double timeNow)
+    {
+        // The maximum velocity will be evaluated to that many times orbital velocity
+        const double C_MAX_VELOCITY_COEFFICIENT = 2.0;
+        
+        double maxVelocity = 0.0;
+
+        if(playerOrbit.Planet == targetOrbit.Planet)
+        {
+            // local transfer
+            Location location = playerOrbit.GetLocation(timeNow);
+            maxVelocity = C_MAX_VELOCITY_COEFFICIENT * Math.Sqrt(playerOrbit.Planet.mass / location.position.magnitude);
+        }
+        else if(playerOrbit.Planet.parentBody == targetOrbit.Planet)
+        {
+            // interplanetary transfer
+            Location location = playerOrbit.Planet.orbit.GetLocation(timeNow);
+            maxVelocity = C_MAX_VELOCITY_COEFFICIENT * Math.Sqrt(playerOrbit.Planet.parentBody.mass / location.position.magnitude);
+        }
+        else
+        {
+            LOG(LOG_LEVEL.ERROR, "GetMaxTransferStartingVelocity: unknown transfer configuration");
+        }
+
+        LOG(LOG_LEVEL.DEBUG, "    Maximum starting transfer velocity evaluated to: " + maxVelocity);
+
+        return maxVelocity;
+    }
 
     // FUNCTION THAT COMPUTES A LIST OF TRANSFERS EVENLY DISPATCHED IN TERMS OF ARRIVAL TIME
     // -------------------------------------------------------------------------------------
@@ -178,9 +223,12 @@ class AnaisTransferCalculator
 
         double time_interval = time_window_length / nbTimeIntervals;
 
-        LOG(LOG_LEVEL.DEBUG, "    Calculating the transfer list");
+        double maxTransferVelocity = GetMaxTransferStartingVelocity(playerOrbit, targetOrbit, start_time);
+        bool maxVelocityExcessed = false; // to allow to enter the loop
 
-        for(int i = 0; i < nbTimeIntervals + 1; i++)
+        LOG(LOG_LEVEL.DEBUG, "    Calculating the transfer list - " + (int)(nbTimeIntervals+1) + " transfers expected");
+
+        for(int i = (int)nbTimeIntervals; (i >= 0) && !maxVelocityExcessed; i--) // loop from the end to be able to stop if the transfers at the sooner dates happens to be over-energetic
         {
             AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
 
@@ -193,42 +241,62 @@ class AnaisTransferCalculator
                 // Add it to the list
                 LOG(LOG_LEVEL.DEBUG, "      Transfer calculated; arrival time = " + anaisTransfer.transferOrbit.orbitEndTime + "; total ΔV = " + anaisTransfer.total_dv);
                 anaisTransferList.Add(anaisTransfer);
+
+                // evaluate velocity - to make it stop to search transfers if we are already too energetic!
+                double velocity = anaisTransfer.transferOrbit.GetLocation(anaisTransfer.transferOrbit.orbitStartTime).velocity.magnitude;
+                if(velocity > maxTransferVelocity)
+                {
+                    maxVelocityExcessed = true;
+                    LOG(LOG_LEVEL.DEBUG, "    Velocity is too high, stop searching from now on.");
+                }
             }
             else
             {
-                LOG(LOG_LEVEL.DEBUG, "    transfer is null");
+                LOG(LOG_LEVEL.DEBUG, "    transfer is null - arrival time = now + " + (arrival_time - start_time));
             }
         }
 
-        // Insert a transfer close to the first bound
-        // ------------------------------------------
-        {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
-
-            double arrival_time = arrival_time_start_window + time_interval / 8.0;
-            anaisTransfer.calculateTransfer(start_time, arrival_time);
-
-            if (anaisTransfer.transferOrbit != null)
-            {
-                // Add it to the list in second position
-                LOG(LOG_LEVEL.DEBUG, "      Transfer calculated; arrival time = " + anaisTransfer.transferOrbit.orbitEndTime + "; total ΔV = " + anaisTransfer.total_dv);
-                anaisTransferList.Insert(1, anaisTransfer);
-            }
-        }
+        // Reverse the list since it's been calculated from the end to the starting date
+        anaisTransferList.Reverse();
 
         // Insert a transfer close to the last bound
         // ------------------------------------------
+        if(anaisTransferList.Count > 1)
         {
             AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
 
-            double arrival_time = arrival_time_end_window - time_interval / 8.0;
+            // the time interval between the 2 last points
+            double lastTimeInterval = anaisTransferList[anaisTransferList.Count - 1].arrivalTime - anaisTransferList[anaisTransferList.Count - 2].arrivalTime;
+
+            // calculate a transfer for a time value right before the last one
+            double arrival_time = anaisTransferList[anaisTransferList.Count - 1].arrivalTime - lastTimeInterval / 8.0;
             anaisTransfer.calculateTransfer(start_time, arrival_time);
 
             if (anaisTransfer.transferOrbit != null)
             {
                 // Add it to the list before last position
-                LOG(LOG_LEVEL.DEBUG, "      Transfer calculated; arrival time = " + anaisTransfer.transferOrbit.orbitEndTime + "; total ΔV = " + anaisTransfer.total_dv);
+                LOG(LOG_LEVEL.DEBUG, "      Additional transfer calculated; arrival time = " + anaisTransfer.transferOrbit.orbitEndTime + "; total ΔV = " + anaisTransfer.total_dv);
                 anaisTransferList.Insert(anaisTransferList.Count - 1, anaisTransfer);
+            }
+        }
+
+        // Insert a transfer close to the first bound
+        // ------------------------------------------
+        if(anaisTransferList.Count > 1)
+        {
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
+
+            // the time interval between the 2 first points
+            double firstTimeInterval = anaisTransferList[1].arrivalTime - anaisTransferList[0].arrivalTime;
+
+            double arrival_time = anaisTransferList[0].arrivalTime + firstTimeInterval / 8.0;
+            anaisTransfer.calculateTransfer(start_time, arrival_time);
+
+            if (anaisTransfer.transferOrbit != null)
+            {
+                // Add it to the list in second position
+                LOG(LOG_LEVEL.DEBUG, "      Additional transfer calculated; arrival time = " + anaisTransfer.transferOrbit.orbitEndTime + "; total ΔV = " + anaisTransfer.total_dv);
+                anaisTransferList.Insert(1, anaisTransfer);
             }
         }
 
@@ -253,7 +321,11 @@ class AnaisTransferCalculator
 
         List<AnaisTransfer> anaisTransferList = calculateTransferList(playerOrbit, targetOrbit, targetPlanet, departureTime, start_arrivalTime, end_arrivalTime, transferType);
 
-        if (anaisTransferList.Count == 0) return null; // safety check
+        if (anaisTransferList.Count < 3)
+        {
+            LOG(LOG_LEVEL.DEBUG, "  Less than 3 transfers were calculated - give up!");
+            return null;
+        }
 
         foreach (AnaisTransfer anaisTransfer in anaisTransferList)
         {
@@ -268,10 +340,10 @@ class AnaisTransferCalculator
 
         // Search for a minimum
         // --------------------
-        double dvMini = anaisTransferList[0].GetDeltaV_valueToMinimize(transferType);
+        double dvMini = double.PositiveInfinity;
         int i_dvMini = 0;
 
-        for (int i = 1; i < anaisTransferList.Count; i++)
+        for (int i = 0; i < anaisTransferList.Count; i++)
         {
             LOG(LOG_LEVEL.DEBUG, "AnaisTransfer[" + i + "] : t = " + anaisTransferList[i].arrivalTime + "; dv = " + anaisTransferList[i].GetDeltaV_valueToMinimize(transferType));
 

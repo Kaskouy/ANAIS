@@ -312,11 +312,13 @@ class AnaisManager
     {
         LOG(LOG_LEVEL.INFO, "Starting ANAIS process");
 
-        try
+        while (Thread.CurrentThread.IsAlive)
         {
-            while (Thread.CurrentThread.IsAlive)
+            Stopwatch stopwatch = null;
+
+            try
             {
-                Stopwatch stopwatch = Stopwatch.StartNew();
+                stopwatch = Stopwatch.StartNew();
 
                 // Reset output data if needed (if target has been changed or game has been exited)
                 // ---------------------------
@@ -334,10 +336,13 @@ class AnaisManager
                     {
                         AnaisDataSet.Swap(ref anaisInputDataSet, ref anaisWorkingDataSet);
                     }
-                    
+
                     // All good, GO ANAIS!
+                    //Stopwatch stopwatch_calculation = Stopwatch.StartNew();
                     bool transferCalculated = anaisWorkingDataSet.CalculateTransfer(ref finalApproachMode, ref isOnEncounterTrajectory, ref encounterDate, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2, ref allowANAIStransferCalculation);
+                    //stopwatch_calculation.Stop();
                     
+
                     if (anaisManagerState.NeedsReset())
                     {
                         // If a reset order arrived while we were calculating, delete everything (OUCH!)
@@ -346,6 +351,7 @@ class AnaisManager
                     else if (transferCalculated)
                     {
                         LOG(LOG_LEVEL.DEBUG, "ANAIS calculation performed successfully!!!!!!!");
+                        //LOG(LOG_LEVEL.INFO, "  ANAIS calculation processed in " + stopwatch_calculation.ElapsedTicks / 10.0 + " microseconds");
 
                         // Swap the working data set with the output to make it available
                         lock (AnaisOutputDataLock)
@@ -356,29 +362,31 @@ class AnaisManager
                         // Initialize the new working data set
                         anaisWorkingDataSet.Reset();
                     }
-
-                    // Report that Anais now goes back to sleeping state
-                    anaisManagerState.EndAnaisActivity();
                 }
+            }
+            catch (System.Threading.ThreadAbortException ex)
+            {
+                LOG(LOG_LEVEL.INFO, "Stopping ANAIS thread");
+            }
+            catch (Exception ex)
+            {
+                LOG(LOG_LEVEL.ERROR, "EXCEPTION - ANAIS thread encountered an error: " + ex.Message);
+                UnityEngine.Debug.Log("EXCEPTION - ANAIS thread encountered an error: " + ex.Message);
+            }
+            finally
+            {
+                // Report that Anais now goes back to sleeping state
+                anaisManagerState.EndAnaisActivity();
 
                 // Leave the thread sleep for the remaining time
                 // ---------------------------------------------
                 stopwatch.Stop();
+
                 int remainingTime = C_ANAIS_TASK_PERIOD - (int)(stopwatch.ElapsedMilliseconds);
                 if (remainingTime < C_ANAIS_TASK_MIN_COOLDOWN) remainingTime = C_ANAIS_TASK_MIN_COOLDOWN;
 
                 Thread.Sleep(remainingTime);
             }
-        }
-        catch(System.Threading.ThreadAbortException ex)
-        {
-            LOG(LOG_LEVEL.INFO, "Stopping ANAIS thread");
-            anaisManagerState.EndAnaisActivity();
-        }
-        catch(Exception ex)
-        {
-            LOG(LOG_LEVEL.ERROR, "EXCEPTION - ANAIS thread has unexpectedly stopped; " + ex.Message);
-            anaisManagerState.EndAnaisActivity();
         }
 
         // Resets all calculated data and all parameters from the calculation algorithm - follows a toggle target order
