@@ -191,7 +191,7 @@ public class KeplerSolver
 			// approximation for small angles
 			Q2 = ecc * peri * trueAnomaly * trueAnomaly / (1.0 + ecc * Math.Cos(trueAnomaly)) / 2.0 / (1.0 + omega * radius);
 		}
-		double Q = Math.Sqrt(Q2);
+		double Q = Math.Sqrt(Math.Max(0.0, Q2));
 		if (trueAnomaly < 0.0) { Q = -Q; }
 
 		// Applying the Quasi-Parabolic equation : sqrt((mu+peri*K)/2) * T = peri*Q + Q^3 * SUM{(i + (i+1)*gamma)/(2i+1) * (omega*Q2)^(i-1)} (i=1..4)

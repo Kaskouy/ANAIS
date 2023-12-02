@@ -109,10 +109,14 @@ public static class LambertSolver
         else { direction = 1; }
 
         delta = deltaTheta / 2.0;
-        C = Math.Sqrt(R1 * R1 + R2 * R2 - 2.0 * R1 * R2 * Math.Cos(deltaTheta)); // Chord
+        C = Math.Sqrt(Math.Max(0.0, R1 * R1 + R2 * R2 - 2.0 * R1 * R2 * Math.Cos(deltaTheta))); // Chord
         S = (R1 + R2 + C) / 2.0;
         lambda = Math.Sqrt(R1 * R2) * Math.Cos(delta) / S;
         deltaT = Math.Sqrt(2.0 * mu / (S * S * S)) * (T2 - T1);
+
+        // Correct lambda if necessary (because of numerical precision problems...)
+        if (lambda < -1.0) lambda = -1.0;
+        else if(lambda > 1.0) lambda = 1.0;
 
         // SOLVE THE LAMBERT PROBLEM
         // -------------------------
@@ -228,7 +232,7 @@ public static class LambertSolver
         double new_x = 0.0;
 
         double _1_minus_x2 = 1 - x*x;
-        double y = Math.Sqrt(1 - lambda * lambda * _1_minus_x2);
+        double y = Math.Sqrt(Math.Max(0.0, 1 - lambda * lambda * _1_minus_x2));
         double cos_psi = x * y + lambda * _1_minus_x2;
         double psi;
 
@@ -324,7 +328,7 @@ public static class LambertSolver
         bool periapsisPassageTimeValid = false;
         
         double _1_minus_x2 = 1 - x * x;
-        double y = Math.Sqrt(1 - lambda * lambda * _1_minus_x2);
+        double y = Math.Sqrt(Math.Max(0.0, 1 - lambda * lambda * _1_minus_x2));
         double cos_phi = x * y - lambda * _1_minus_x2;
         double cos_psi = x * y + lambda * _1_minus_x2;
 
@@ -366,7 +370,7 @@ public static class LambertSolver
         {
             // Argument of periapsis
             // ---------------------
-            argOfPeriapsis = arg1 + delta - Math.Atan2(D * rho * Math.Sqrt(1 - rho2), slr * cos_psi - lambda * S);
+            argOfPeriapsis = arg1 + delta - Math.Atan2(D * rho * Math.Sqrt(Math.Max(0.0, 1 - rho2)), slr * cos_psi - lambda * S);
 
             while (argOfPeriapsis < -Math.PI) argOfPeriapsis += 2.0 * Math.PI;
             while (argOfPeriapsis >  Math.PI) argOfPeriapsis -= 2.0 * Math.PI;
@@ -384,7 +388,10 @@ public static class LambertSolver
                 double E1;
                 if (x < 1.0)
                 {
-                    E1 = Math.Asin(eccentricTerm / ecc);
+                    double theSinus = eccentricTerm / ecc;
+                    if (theSinus < -1.0) theSinus = -1.0;
+                    else if(theSinus > 1.0) theSinus = 1.0;
+                    E1 = Math.Asin(theSinus);
 
                     // The quantity tested gives the sign of cos(E1), which is necessary to extract the eccentric anomaly
                     if (1.0 - 2.0 * R1 * _1_minus_x2 / S < 0.0)

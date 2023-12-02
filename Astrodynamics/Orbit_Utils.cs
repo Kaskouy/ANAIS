@@ -64,14 +64,19 @@ static class Orbit_Utils
 
 	public static bool GetIntersectionAngles(Orbit orbit1, Orbit orbit2, out double angleA, out double angleB)
     {
-		double deltaPhi = NormalizeAngle(orbit2.arg - orbit1.arg);
-		double cosDeltaPhi = Math.Cos(deltaPhi);
-		double A = Math.Sqrt(Math.Pow(orbit1.ecc / orbit1.slr, 2.0) + Math.Pow(orbit2.ecc / orbit2.slr, 2.0) - 2.0 * orbit1.ecc * orbit2.ecc * cosDeltaPhi / (orbit1.slr * orbit2.slr));
+        double deltaPhi = NormalizeAngle(orbit2.arg - orbit1.arg);
+        double cosDeltaPhi = Math.Cos(deltaPhi);
+        double A = Math.Pow(orbit1.ecc / orbit1.slr, 2.0) + Math.Pow(orbit2.ecc / orbit2.slr, 2.0) - 2.0 * orbit1.ecc * orbit2.ecc * cosDeltaPhi / (orbit1.slr * orbit2.slr);
+		A = Math.Sqrt(Math.Max(0.0, A));
 		double B = 1.0 / orbit1.slr - 1.0 / orbit2.slr;
-		
+
 		// calculate the median argument
-		double medianArg = Math.Acos((orbit2.ecc * cosDeltaPhi / orbit2.slr - orbit1.ecc / orbit1.slr) / A);
-		if (Math.Sin(deltaPhi) < 0.0)
+		double cosMedianArg = (orbit2.ecc * cosDeltaPhi / orbit2.slr - orbit1.ecc / orbit1.slr) / A;
+		if (cosMedianArg < -1.0) cosMedianArg = -1.0;
+        if (cosMedianArg > 1.0) cosMedianArg = 1.0;
+        double medianArg = Math.Acos(cosMedianArg);
+        
+        if (Math.Sin(deltaPhi) < 0.0)
 		{
 			medianArg = -medianArg;
 		}
