@@ -129,7 +129,11 @@ public class Orbit_OrbitPatch
 				}
 				else
 				{
-					double loc_trueAnomaly = Math.Acos((__instance.slr / location.planet.SOI - 1.0) / __instance.ecc);
+					double theCos = (__instance.slr / location.planet.SOI - 1.0) / __instance.ecc;
+					if (theCos < -1.0) theCos = -1.0;
+					else if(theCos > 1.0) theCos = 1.0;
+
+                    double loc_trueAnomaly = Math.Acos(theCos);
 					new KeplerSolver(location.planet.mass, __instance.periapsis, specificEnergy).GetTimeAtPosition(location.planet.SOI, loc_trueAnomaly, ref timeFromPeri);
 					__instance.orbitEndTime = __instance.periapsisPassageTime + timeFromPeri;
 				}
