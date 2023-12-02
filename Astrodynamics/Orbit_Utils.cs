@@ -53,7 +53,7 @@ static class Orbit_Utils
 
 	public static Orbit Clone(this Orbit orbit)
     {
-		LOG(LOG_LEVEL.DEBUG, "Clone called");
+		//LOG(LOG_LEVEL.DEBUG, "Clone called");
 
 		Orbit_OrbitConstructor2_Patch.orbitToCopy = orbit;
         Orbit newOrbit = new Orbit(0.0, 0.0, 0.0, Orbit_OrbitConstructor2_Patch.C_HACK_COPY_CONSTRUCTOR, null, orbit.pathType, null);

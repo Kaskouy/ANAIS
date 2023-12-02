@@ -100,7 +100,7 @@ public class KeplerSolver
 	public void GetPositionAtTime(double time_from_peri, ref double radius, ref double trueAnomaly)
 	{
 		/*LogFile.Log("--- GetPositionAtTime  ---");
-		LogFile.Log("  mu              = " + mu);
+		LogFile.Log("  mu              = " + mu );
 		LogFile.Log("  periapsis       = " + peri);
 		LogFile.Log("  specific energy = " + K);
 		LogFile.Log("  eccentricity    = " + ecc);

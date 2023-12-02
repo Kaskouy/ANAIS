@@ -19,7 +19,7 @@ class EjectionTrajectoryCalculator
         // exit if initial guess is out of bounds (stop at 0.9999 instead of 1 because the derivative couldn't be calculated for -1 and 1)
         if ((initialGuess < -0.9999) || (initialGuess > 0.9999))
         {
-            LOG(LOG_LEVEL.DEBUG, "calculateSolution: Error, x_ini out of bounds: " + initialGuess);
+            LOG(LOG_LEVEL.DEBUG, "calculateSolution: Error, x_ini out of bounds : " + initialGuess);
             return false;
         }
 

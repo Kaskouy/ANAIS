@@ -280,8 +280,8 @@ public class OrbitDrawer
 		// This is because the hyperbola is browsed from apoapsis to periapsis to apoapsis.
 		// The array only lists points from periapsis to apoapsis, the other part is deduced by symmetry
 		// negative indexes refer to the symmetric part (apo -> peri), the corresponding true anomaly is simply negated
-		int i_start; // index of the first point following startTrueAnomaly
-		int i_stop;  // index of the first point following endTrueAnomaly
+		int i_start;  // index of the first point following startTrueAnomaly
+		int i_stop;   // index of the first point following endTrueAnomaly
 
 		if (orbit.direction > 0)
 		{

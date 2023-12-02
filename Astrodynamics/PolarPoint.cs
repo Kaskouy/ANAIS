@@ -27,7 +27,7 @@ public struct PolarPoint
             argument += Math.PI;
         }
 
-        // make sure argument is between -Pi and Pi
+        // make sure argument is between -Pi and +Pi
         NormalizeArgument();
     }
 
