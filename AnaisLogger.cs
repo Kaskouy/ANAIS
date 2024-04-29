@@ -26,18 +26,33 @@ public enum LOG_CATEGORY
     MAP_NAVIGATION,
     CLOSEST_APPROACH,
     EJECTION_TRAJECTORY,
+    RETURN_TRAJECTORY,
     NUMERICAL_MINI_CALCULATOR,
     ANAIS_TRANSFER,
     ANAIS_TRANSFER_CALCULATOR,
     ANAIS_MANAGER,
-    ANAIS_DATA_SET
+    ANAIS_DATA_SET,
+    VECTOR2D_FIXED_POINT_SOLVER
 }
 
 class AnaisLogger
 {
     private static readonly string[] STR_LOG_LEVEL = { "[DEBUG]", "[INFO ]", "[WARN ]", "[ERROR]", "[NONE ]" };
 
-    private static readonly string[] STR_LOG_CATEGORY = { "LAMBERT_SOLVER", "HOHMANN_TRANSFER", "ORBIT", "VELOCITY_ARROW", "MAP_NAVIGATION", "CLOSEST_APPROACH", "EJECTION_TRAJECTORY", "NUMERICAL_MINI_CALCULATOR", "ANAIS_TRANSFER", "ANAIS_TRANSFER_CALCULATOR", "ANAIS_MANAGER", "ANAIS_DATA_SET" };
+    private static readonly string[] STR_LOG_CATEGORY = { "LAMBERT_SOLVER", 
+                                                          "HOHMANN_TRANSFER", 
+                                                          "ORBIT", 
+                                                          "VELOCITY_ARROW",
+                                                          "MAP_NAVIGATION",
+                                                          "CLOSEST_APPROACH",
+                                                          "EJECTION_TRAJECTORY",
+                                                          "RETURN_TRAJECTORY",
+                                                          "NUMERICAL_MINI_CALCULATOR",
+                                                          "ANAIS_TRANSFER",
+                                                          "ANAIS_TRANSFER_CALCULATOR",
+                                                          "ANAIS_MANAGER",
+                                                          "ANAIS_DATA_SET",
+                                                          "VECTOR2D_FIXED_POINT_SOLVER" };
 
     private static Dictionary<LOG_CATEGORY, LOG_LEVEL> ListLogLevels = new Dictionary<LOG_CATEGORY, LOG_LEVEL>();
 
@@ -62,18 +77,20 @@ class AnaisLogger
         }
 
         // Define the desired level of log for each category
-        ListLogLevels[LOG_CATEGORY.LAMBERT_SOLVER]            = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.HOHMANN_TRANSFER]          = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.ORBIT]                     = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.VELOCITY_ARROW]            = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.MAP_NAVIGATION]            = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.CLOSEST_APPROACH]          = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.EJECTION_TRAJECTORY]       = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.NUMERICAL_MINI_CALCULATOR] = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.ANAIS_TRANSFER]            = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.ANAIS_TRANSFER_CALCULATOR] = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.ANAIS_MANAGER]             = LOG_LEVEL.WARNING;
-        ListLogLevels[LOG_CATEGORY.ANAIS_DATA_SET]            = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.LAMBERT_SOLVER]              = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.HOHMANN_TRANSFER]            = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ORBIT]                       = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.VELOCITY_ARROW]              = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.MAP_NAVIGATION]              = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.CLOSEST_APPROACH]            = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.EJECTION_TRAJECTORY]         = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.RETURN_TRAJECTORY]           = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.NUMERICAL_MINI_CALCULATOR]   = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ANAIS_TRANSFER]              = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ANAIS_TRANSFER_CALCULATOR]   = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ANAIS_MANAGER]               = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ANAIS_DATA_SET]              = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.VECTOR2D_FIXED_POINT_SOLVER] = LOG_LEVEL.WARNING;
 
 #else
         Environment.SetEnvironmentVariable("HARMONY_NO_LOG", "1");

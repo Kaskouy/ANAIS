@@ -26,7 +26,7 @@
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE;ACTIVE_LOGS</DefineConstants>
+    <DefineConstants>TRACE;ACTIVE_LOGS_NONE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>0</WarningLevel>
   </PropertyGroup>
@@ -36,6 +36,10 @@
     </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>..\..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Spaceflight Simulator\Spaceflight Simulator Game\Spaceflight Simulator_Data\Managed\Assembly-CSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="netstandard, Version=2.1.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>bin\Release\netstandard.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -67,6 +71,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AnaisLogger.cs" />
+    <Compile Include="Astrodynamics\ReturnToPlanetCalculator.cs" />
     <Compile Include="GUI\ANAIS_Panel.cs" />
     <Compile Include="GUI\ANAIS_Panel_Constants.cs" />
     <Compile Include="GUI\ANAIS_Settings.cs" />
@@ -90,6 +95,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TransferCalculator\AnaisTransferCalculator.cs" />
     <Compile Include="SFS_Patches\VelocityArrowDrawer_Patch.cs" />
+    <Compile Include="TransferCalculator\Vector2D_FixedPointSolver.cs" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
