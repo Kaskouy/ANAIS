@@ -7,13 +7,18 @@ using System.Diagnostics;
 
 using SFS.World;
 using SFS.WorldBase;
+using UnityEngine;
 
 class AnaisTransfer
 {
+    // C_DELTA_V_SIGNIFICANCY_THRESHOLD: Below this threshold, a delta-V value isn't considered significant for efficiency calculations
+    private const double C_DELTA_V_SIGNIFICANCY_THRESHOLD = 0.1;
+    
     // the initial and the target orbit
     public Orbit originOrbit;
     public Orbit destinationOrbit;
     public Planet targetPlanet;
+    public double targetAltitude;
 
     // all calculated data
     public Orbit transferOrbit;
@@ -36,11 +41,24 @@ class AnaisTransfer
     bool needsToCalculateExitTrajectory = false;
     public Orbit childTransferOrbit = null;
 
-    public AnaisTransfer(Orbit _originOrbit, Orbit _destinationOrbit, Planet _targetPlanet, ANAIS_Settings.E_TRANSFER_TYPE transferType)
+
+    // --------------------------------------------------------------------------------------------
+    //                                    AnaisTransfer
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   The constructor. Initializes all data for the future calculations. Note that data
+    //   consistency is not checked at that point, the caller has to make sure the data is
+    //   appropriate.
+    // 
+    // RESULT:
+    //   Nothing, it's a constructor...
+    // --------------------------------------------------------------------------------------------
+    public AnaisTransfer(Orbit _originOrbit, Orbit _destinationOrbit, Planet _targetPlanet, double _targetAltitude, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         originOrbit = _originOrbit;
         destinationOrbit = _destinationOrbit;
         targetPlanet = _targetPlanet;
+        targetAltitude = _targetAltitude;
 
         // init all the shit
         transferOrbit = null;
@@ -69,6 +87,46 @@ class AnaisTransfer
         else return dv_start;
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                               areDeltaV_valuesSignificant
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function tells, once the transfers have been calculated, if the deltaV values are
+    //   significant. In particular, for an interplanetary transfer that hasn't been refined, this
+    //   will not be the case. This is to warn that the delta-V value calculated is not accurate
+    //   and may not be displayed.
+    // 
+    // RESULT:
+    //   Returns true if deltaV values are significant, false otherwise.
+    // --------------------------------------------------------------------------------------------
+    public bool areDeltaV_valuesSignificant()
+    {
+        if(transferOrbit == null)
+        {
+            return false;
+        }
+        else if(needsToCalculateExitTrajectory && (childTransferOrbit == null))
+        {
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+
+    // --------------------------------------------------------------------------------------------
+    //                               checkPlanetaryConfiguration
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   Checks if the planet configuration is correct in the case of a transfer (not a return to
+    //   planet trajectory). Also checks if the ejection trajectory has to be calculated.
+    // 
+    // RESULT:
+    //   true if planetary configuration is good, false otherwise.
+    // --------------------------------------------------------------------------------------------
     private bool checkPlanetaryConfiguration()
     {
         if((targetPlanet != null) && ((originOrbit.Planet == targetPlanet) || (originOrbit.Planet.parentBody == targetPlanet)))
@@ -96,33 +154,46 @@ class AnaisTransfer
         return false;
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                             calculateDeltaVandTransferEfficiency
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function calculates the delta-V associated to a burn and its efficiency, based on the
+    //   start and end velocity.
+    // 
+    // RESULT:
+    //   Returns the delta-V and efficiency associated to the burn.
+    // --------------------------------------------------------------------------------------------
     private void calculateDeltaVandTransferEfficiency(Double2 startVelocity, Double2 endVelocity, out Double2 DeltaV, out double dv, out double transferEfficiency)
     {
-        if (transferOrbit != null)
-        {
-            DeltaV = endVelocity - startVelocity;
-            dv = DeltaV.magnitude;
+        DeltaV = endVelocity - startVelocity;
+        dv = DeltaV.magnitude;
 
-            if (dv > 1.0)
-            {
-                // usual calculation (deltaV must not be null)
-                transferEfficiency = Math.Abs(endVelocity.magnitude - startVelocity.magnitude) / dv;
-            }
-            else
-            {
-                // not significant
-                transferEfficiency = 1.0;
-            }
+        if (dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
+        {
+            // usual calculation (deltaV must not be null)
+            transferEfficiency = Math.Abs(endVelocity.magnitude - startVelocity.magnitude) / dv;
         }
         else
         {
-            // No tranfer exists -> return default values
-            DeltaV = new Double2(0.0, 0.0);
-            dv = 0.0;
-            transferEfficiency = 0.0;
+            // not significant
+            transferEfficiency = 1.0;
         }
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                                  calculateInsertionDeltaV
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function calculates the delta-V that will be needed for an insertion into low orbit.
+    //   It's simply calculated from the speed at which the ship enters the SOI and using the
+    //   specific energy formula.
+    // 
+    // RESULT:
+    //   Returns the delta-V required for insertion.
+    // --------------------------------------------------------------------------------------------
     private double calculateInsertionDeltaV(double dv_mainTransfer)
     {
         if(targetPlanet == null)
@@ -131,7 +202,7 @@ class AnaisTransfer
         }
         else
         {
-            double periapsis = targetPlanet.TimewarpRadius_Descend; // Will be the supposed insertion radius
+            double periapsis = targetPlanet.Radius + targetAltitude; // Will be the supposed insertion radius
 
             // Calculate the arrival speed at periapsis using the specific energy formula
             double arrivalDV = dv_mainTransfer * dv_mainTransfer + 2.0 * targetPlanet.mass * (1.0 / periapsis - 1.0 / targetPlanet.SOI);
@@ -149,6 +220,25 @@ class AnaisTransfer
         }
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                                    calculateTransfer
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function is used to calculate a transfer trajectory for a set departure time and
+    //   arrival time. It detects automatically the configuration (local/interplanetary transfer)
+    //   and calls the appropriate function. In the case of an interplanetary transfer, only the
+    //   main transfer will be calculated though, refineTransferCalculation has to be called to
+    //   calculate the ejection trajectory. This is done in 2 steps for optimization purposes:
+    //   calculating the ejection trajectory is a costly process, so in practice it's done only if
+    //   the main transfer is promising enough.
+    //   The AnaisTransfer has to be initialized through the constructor.
+    // 
+    // RESULT:
+    //   In case of success, the trajectory is calculated in transferOrbit. The transfer (deltaV)
+    //   and efficiency data are calculated aswell.
+    //   If the calculation failed, transferOrbit is set to null and the function returns.
+    // --------------------------------------------------------------------------------------------
     public void calculateTransfer(double startTime, double endTime)
     {
         // CHECK DATA COMPATIBILITY
@@ -170,16 +260,30 @@ class AnaisTransfer
 
         if(!needsToCalculateExitTrajectory)
         {
-            LOG(LOG_LEVEL.DEBUG, "AnaisTransfer::calculateTransfer: Calculate local transfer");
+            //LOG(LOG_LEVEL.DEBUG, "AnaisTransfer::calculateTransfer: Calculate local transfer");
             calculateTransferInSameSOI();
         }
         else
         {
-            LOG(LOG_LEVEL.DEBUG, "AnaisTransfer::calculateTransfer: Calculate interplanetary transfer");
+            //LOG(LOG_LEVEL.DEBUG, "AnaisTransfer::calculateTransfer: Calculate interplanetary transfer");
             calculateTransferFromChildPlanet();
         }
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                             calculateTransferInSameSOI
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function is used to calculate a local transfer.
+    //   The AnaisTransfer has to be initialized through a constructor, and a departure and arrival
+    //   date have to be provided.
+    // 
+    // RESULT:
+    //   In case of success, the trajectory is calculated in transferOrbit. The transfer (deltaV)
+    //   and efficiency data are calculated aswell.
+    //   If the calculation failed, transferOrbit is set to null and the function returns.
+    // --------------------------------------------------------------------------------------------
     private void calculateTransferInSameSOI()
     {
         // Get starting and ending locations
@@ -225,7 +329,7 @@ class AnaisTransfer
 
             if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
             {
-                if (total_dv > 1.0)
+                if (total_dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
                 {
                     transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
                 }
@@ -239,7 +343,6 @@ class AnaisTransfer
             {
                 transfer_efficiency = start_transfer_eff;
             }
-            
 
             LOG(LOG_LEVEL.DEBUG, "  calculateTransferInSameSOI: Transfer calculated with success");
             LOG(LOG_LEVEL.DEBUG, "    ΔVstart = " + dv_start + "; ΔVend = " + dv_end);
@@ -251,10 +354,27 @@ class AnaisTransfer
         }
     }
 
+
+    // --------------------------------------------------------------------------------------------
+    //                             calculateTransferFromChildPlanet
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function is used to calculate a first approximation of an interplanetary transfer.
+    //   The interplanetary transfer is treated as a local transfer from the orbited planet position
+    //   as a first approximation.
+    //   The AnaisTransfer has to be initialized through a constructor, and a departure and arrival
+    //   date have to be provided.
+    //   In practice, the result is considered sufficient on high time-warp ratios. Otherwise, and
+    //   provided the calculation is a success, refineTransferCalculation has to be called after to
+    //   take into account the ejection trajectory.
+    // 
+    // RESULT:
+    //   In case of success, the trajectory is calculated in transferOrbit. The transfer (deltaV)
+    //   and efficiency data are calculated aswell.
+    //   If the calculation failed, transferOrbit is set to null and the function returns.
+    // --------------------------------------------------------------------------------------------
     private void calculateTransferFromChildPlanet()
     {
-        // Sont initialisés: originOrbit, destinationOrbit, departureTime, arrivalTime
-
         // The planets
         Planet parentPlanet = destinationOrbit.Planet;
         Planet childPlanet = originOrbit.Planet;
@@ -262,145 +382,215 @@ class AnaisTransfer
         // The orbit of the child body
         Orbit childPlanetOrbit = childPlanet.orbit;
 
-        // the date at which the ship will exit the SOI of the child object (initialized with departureTime for the first iteration)
-        double childPlanetExitTime = departureTime;
-
-        // Location of ship at start time
-        Location originLocation = originOrbit.GetLocation(departureTime);
-        double startRadius = originLocation.position.magnitude;
-        double startArgument = originLocation.position.AngleRadians;
-
         // location of target at arrival time
         Location targetLocation = destinationOrbit.GetLocation(arrivalTime);
 
         // Planet location when the ship exists the SOI
-        Location childPlanetLocationAtExitTime = childPlanetOrbit.GetLocation(childPlanetExitTime);
+        Location childPlanetLocation = childPlanetOrbit.GetLocation(departureTime);
 
         // Calculate the transfer without taking into account the SOI, taking the planet position as the starting position
-        transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, childPlanetLocationAtExitTime.position, targetLocation.position, childPlanetExitTime, arrivalTime, childPlanetOrbit.direction);
+        transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, childPlanetLocation.position, targetLocation.position, departureTime, arrivalTime, childPlanetOrbit.direction);
 
-        // Stop calculation immediately if it failed
-        if (transferOrbit == null)
+        if(transferOrbit != null) // Calculate transfer efficiency like if it was a transfer performed in the main body's frame from the position of the child planet
         {
-            childTransferOrbit = null;
-            LOG(LOG_LEVEL.DEBUG, "ERROR: initial transfer calculation failed");
-            return;
+            // Get starting and ending locations on the transfer orbits
+            Location startTransferLocation = transferOrbit.GetLocation(departureTime);
+            Location endTransferLocation = transferOrbit.GetLocation(arrivalTime);
+
+            // Calculate deltaV and transfer efficiency at start
+            calculateDeltaVandTransferEfficiency(childPlanetLocation.velocity, startTransferLocation.velocity, out deltaV_start, out dv_start, out double start_transfer_eff);
+
+            // Calculate deltaV and transfer efficiency at arrival
+            calculateDeltaVandTransferEfficiency(endTransferLocation.velocity, targetLocation.velocity, out Double2 deltaV_end_main, out double dv_end_main, out double end_main_transfer_eff);
+
+            // Calculate deltaV and transfer efficiency at arrival
+            double end_transfer_eff = 0.0;
+            bool noArrivalPlanet = false;
+            if ((targetPlanet == null) || noArrivalPlanet)
+            {
+                // Target is punctual, the last data is what we need
+                deltaV_end = deltaV_end_main;
+                dv_end = dv_end_main;
+            }
+            else
+            {
+                // Target is a planet, we must take into account its SOI
+                deltaV_end = deltaV_end_main; // wrong value, but it has no sense and is not used from now on anyway
+                dv_end = calculateInsertionDeltaV(dv_end_main); // Calculate the insertion speed after factoring in the planet's gravity
+            }
+
+            end_transfer_eff = end_main_transfer_eff;
+
+            // global deltaV and efficiency
+            total_dv = dv_start + dv_end;
+
+            if (transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
+            {
+                if (total_dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
+                {
+                    transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
+                }
+                else
+                {
+                    // not significant
+                    transfer_efficiency = 1.0;
+                }
+            }
+            else
+            {
+                transfer_efficiency = start_transfer_eff;
+            }
+
+            //LOG(LOG_LEVEL.DEBUG, "  calculateTransferFromChildPlanet: Main transfer calculated with success");
+            //LOG(LOG_LEVEL.DEBUG, "    ΔVstart = " + dv_start + "; ΔVend = " + dv_end);
+
+            /*bool success = refineTransferCalculation();
+
+            if(!success)
+            {
+                LOG(LOG_LEVEL.DEBUG, "    Transfer from child planet: failed to refine transfer calculation - Abort");
+            }*/
         }
+        else
+        {
+            LOG(LOG_LEVEL.DEBUG, "    Transfer from child planet: failed to calculate main transfer orbit - Abort");
+        }
+    }
 
-        // Calculate velocity at the exit of the SOI
-        Location locationAtMainTransferStart = transferOrbit.GetLocation(childPlanetExitTime);
-        Double2 exitVelocity = locationAtMainTransferStart.velocity - childPlanetLocationAtExitTime.velocity;
 
-        Double2 oldExitVelocity;
-        double oldChildPlanetExitTime;
+    // --------------------------------------------------------------------------------------------
+    //                                  refineTransferCalculation
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function is used to refine the calculation in the case of an interplanetary transfer.
+    //   This function is to be called after calculateTransferFromChildPlanet, provided that one
+    //   has succeeded. In this context, transferOrbit is initialized.
+    //   The purpose is to take into account the ejection trajectory. The
+    //   calculateTransferFromChildPlanet function calculates a transfer from the orbited planet as
+    //   if it was a local transfer as a first approximation. This function starts from this
+    //   calculation as a basis.
+    // 
+    // RESULT:
+    //   In case of success, the ejection trajectory is calculated in childTransferOrbit. The
+    //   transfer (deltaV) and efficiency data are calculated aswell.
+    //   If the calculation failed, transferOrbit and childTransferOrbit are both set to null and
+    //   the function returns.
+    // --------------------------------------------------------------------------------------------
+    public bool refineTransferCalculation()
+    {
+        // The planets
+        Planet parentPlanet = destinationOrbit.Planet;
+        Planet childPlanet = originOrbit.Planet;
 
-        bool success = false;
+        // The orbit of the child body
+        Orbit childPlanetOrbit = childPlanet.orbit;
+
+        // location of target at arrival time
+        Location targetLocation = destinationOrbit.GetLocation(arrivalTime);
+
+        // Location of ship at start time
+        Location startLocation = originOrbit.GetLocation(departureTime);
+
+        // time at which the ship exits the SOI (first initialized at departure time)
+        double exitTime = departureTime;
+
+        // Planet location when the ship exists the SOI
+        Location childPlanetLocation = childPlanetOrbit.GetLocation(exitTime);
+
+        // exitVelocity_LambertArc: the velocity at which the ship exits the SOI (in the parent body's frame of reference) - evaluated from the transfer evaluated by the Lambert solver
+        Double2 exitVelocity_LambertArc = transferOrbit.GetLocation(exitTime).velocity - childPlanetLocation.velocity;
+
+        // exitVelocity_Ejection: same thing, but evaluated from the ejection trajectory from the child body - initialised with the velocity calculated above
+        Double2 exitVelocity_Ejection = exitVelocity_LambertArc;
 
         uint nbIterations = 0;
+        bool success = false;
 
+        Double2 deltaV = new Double2(0.0, 0.0);
+        Vector2D_FixedPointSolver theSolver = new Vector2D_FixedPointSolver();
+
+        // Iterate until we find a compatible transfer and ejection trajectory
+        // -------------------------------------------------------------------
         do
         {
             nbIterations++;
 
             // Calculate the exit trajectory that satisfies all those parameters: starting position, exit velocity
-            childTransferOrbit = EjectionTrajectoryCalculator.calculateEjectionTrajectories(childPlanet, startRadius, startArgument, departureTime, exitVelocity.magnitude, exitVelocity.AngleRadians, originOrbit.direction, exit: true);
+            //LOG(LOG_LEVEL.DEBUG, "    refineTransferCalculation: calculate ejection trajectory");
+            childTransferOrbit = EjectionTrajectoryCalculator.calculateEjectionTrajectories(childPlanet, startLocation, departureTime, exitVelocity_Ejection, originOrbit.direction, exit: true);
 
             if (childTransferOrbit == null)
             {
                 transferOrbit = null;
                 LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate Ejection trajectory (iteration " + nbIterations + ")");
-                return;
+                return false;
             }
 
-            // Recalculate exit time and exit position
-            oldChildPlanetExitTime = childPlanetExitTime;
-            childPlanetExitTime = childTransferOrbit.orbitEndTime;
-            Location exitLocation_ChildPlanetRef = childTransferOrbit.GetLocation(childPlanetExitTime);
-            childPlanetLocationAtExitTime = childPlanetOrbit.GetLocation(childPlanetExitTime);
+            // calculate exit time
+            exitTime = childTransferOrbit.orbitEndTime;
 
-            LOG(LOG_LEVEL.DEBUG, " Iteration " + nbIterations + " Original exit velocity: V = " + exitVelocity.magnitude + "; heading = " + exitVelocity.AngleRadians);
-            LOG(LOG_LEVEL.DEBUG, " Iteration " + nbIterations + "      New exit velocity: V = " + exitLocation_ChildPlanetRef.velocity.magnitude + "; heading = " + exitLocation_ChildPlanetRef.velocity.AngleRadians);
+            // calculate exit position (which will be the starting position for the Lambert arc that will be calculated right after)
+            childPlanetLocation = childPlanetOrbit.GetLocation(exitTime);
+            Double2 startingPosition = childPlanetLocation.position + childTransferOrbit.GetLocation(exitTime).position;
 
-            // New starting position for the main trajectory calculation
-            Double2 startingPosition = childPlanetLocationAtExitTime.position + exitLocation_ChildPlanetRef.position;
+            // Calculate the transfer in the main body's frame of reference from the newly calculated starting position
+            //LOG(LOG_LEVEL.DEBUG, "    refineTransferCalculation: calculate main Lambert arc");
+            transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, startingPosition, targetLocation.position, exitTime, arrivalTime, childPlanetOrbit.direction);
 
-            // Calculate the trajectory from that new exit point and starting date
-            transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, startingPosition, targetLocation.position, childPlanetExitTime, arrivalTime, childPlanetOrbit.direction);
-
-            // Stop calculation immediately if it failed
-            if (transferOrbit == null)
+            if(transferOrbit == null)
             {
-                childTransferOrbit = null;
                 LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate transfer trajectory (iteration " + nbIterations + ")");
-                return;
+                childTransferOrbit = null;
+                return false;
             }
 
-            // Calculate velocity at the exit of the SOI
-            locationAtMainTransferStart = transferOrbit.GetLocation(childPlanetExitTime);
-            oldExitVelocity = exitVelocity;
-            exitVelocity = locationAtMainTransferStart.velocity - childPlanetLocationAtExitTime.velocity;
+            // evaluate new exit velocity
+            exitVelocity_LambertArc = transferOrbit.GetLocation(exitTime).velocity - childPlanetLocation.velocity;
+            deltaV = exitVelocity_LambertArc - exitVelocity_Ejection;
 
-            // Fixer un critère de sortie: variation négligeable de la date de sortie devant la durée du transfert, variation négligeable de la vitesse d'éjection
-            double exitTimeVariation = Math.Abs(childPlanetExitTime - oldChildPlanetExitTime) / (arrivalTime - departureTime);
-            double exitSpeedVariation = (exitVelocity - oldExitVelocity).magnitude;
-
-            LOG(LOG_LEVEL.DEBUG, "Iteration " + nbIterations + ": ");
-            LOG(LOG_LEVEL.DEBUG, "  Child planet exit time = " + (childPlanetExitTime - departureTime) + " (old = " + (oldChildPlanetExitTime - departureTime) + "); exitTimeVariation = " + exitTimeVariation);
-            LOG(LOG_LEVEL.DEBUG, "  Exit speed: V = " + exitVelocity.magnitude + ", heading = " + exitVelocity.AngleRadians + " (old : V = " + oldExitVelocity.magnitude + ", heading = " + oldExitVelocity.AngleRadians + "); exitSpeedVariation = " + exitSpeedVariation);
-
-            // exit condition: exit time and speed must not vary too much
-            if (/*(exitTimeVariation < 0.0001) &&*/ (exitSpeedVariation < 0.1))
+            // evaluate success criteria : the exit velocity that results from ejection has to match the exit velocity deduced from the Lambert arc calculation
+            if (deltaV.magnitude < 0.1)
             {
+                LOG(LOG_LEVEL.DEBUG, "   CALCULATION SUCCESSFUL after " + nbIterations + " iterations (delta = " + deltaV.magnitude + " m/s)");
+                LOG(LOG_LEVEL.DEBUG, "     Final value: Vx = " + exitVelocity_Ejection.x + "; Vy = " + exitVelocity_Ejection.y);
                 success = true;
             }
-            else
+
+            // evaluate new exit velocity vector for next iteration
+            if(!success)
             {
-                // TEST: loop again by taking as exit velocity the median between the 2 calculated exit velocities
-                // This is an attempt to avoid looping alternatively between 2 values
-                Double2 exitSpeedDelta = exitVelocity - oldExitVelocity;
-                exitVelocity = 0.5 * (exitVelocity + oldExitVelocity);
+                theSolver.addPoint(exitVelocity_Ejection, exitVelocity_LambertArc);
 
-
-
-                // Use a weighted median between both velocities
-                //exitVelocity = ((childPlanetExitTime - departureTime) * oldExitVelocity + (arrivalTime - childPlanetExitTime) * exitVelocity) / (arrivalTime - departureTime);
-
-                LOG(LOG_LEVEL.DEBUG, "  New exit velocity: V = " + exitVelocity.magnitude + ", heading = " + exitVelocity.AngleRadians + "; exit time = " + (childPlanetExitTime - departureTime) + "; total time = " + (arrivalTime - departureTime));
-                LOG(LOG_LEVEL.DEBUG, "  ΔVx = " + exitSpeedDelta.x + "; ΔVy = " + exitSpeedDelta.y);
-
-                
+                exitVelocity_Ejection = theSolver.GetEstimatedSolution();
             }
 
         } while ((nbIterations < 20) && (success == false));
 
-
-        if(success == false)
+        // Exit if the transfer couldn't be calculated
+        // -------------------------------------------
+        if (!success)
         {
-            // Something went wrong, make sure we have invalid data
+            LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate interplanetary transfer - too many iterations");
             transferOrbit = null;
             childTransferOrbit = null;
-            LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate interplanetary transfer: too many iterations");
-            return;
+            return false;
         }
 
+        
         // Calculate all data and efficiency now
         // -------------------------------------
-        Location locationAfterStartBurn = childTransferOrbit.GetLocation(departureTime);
-        Location locationBeforeEndBurn = transferOrbit.GetLocation(arrivalTime);
+        // Calculate deltaV and transfer efficiency at start, from ship orbit to child transfer orbit
+        calculateDeltaVandTransferEfficiency(startLocation.velocity, childTransferOrbit.GetLocation(departureTime).velocity, out deltaV_start, out dv_start, out double start_transfer_eff);
 
-        // Calculate deltaV and transfer efficiency at start
-        calculateDeltaVandTransferEfficiency(originLocation.velocity, locationAfterStartBurn.velocity, out deltaV_start, out dv_start, out double start_transfer_eff);
+        // Calculate deltaV and transfer efficiency for start at main transfer: from child planet velocity to main transfer velocity
+        calculateDeltaVandTransferEfficiency(childPlanetLocation.velocity, transferOrbit.GetLocation(exitTime).velocity, out Double2 deltaV_start_main, out double dv_start_main, out double start_main_transfer_eff);
 
-        // Calculate deltaV and transfer efficiency at main transfer start
-        calculateDeltaVandTransferEfficiency(childPlanetLocationAtExitTime.velocity, locationAtMainTransferStart.velocity, out Double2 deltaV_start_main, out double dv_start_main, out double start_main_transfer_eff);
-
-        // Calculate deltaV and transfer efficiency at main transfer arrival
-        calculateDeltaVandTransferEfficiency(locationBeforeEndBurn.velocity, targetLocation.velocity, out Double2 deltaV_end_main, out double dv_end_main, out double end_main_transfer_eff);
+        // Calculate deltaV and transfer efficiency at arrival
+        calculateDeltaVandTransferEfficiency(transferOrbit.GetLocation(arrivalTime).velocity, targetLocation.velocity, out Double2 deltaV_end_main, out double dv_end_main, out double end_main_transfer_eff);
 
         // Calculate deltaV and transfer efficiency at arrival
         double end_transfer_eff = 0.0;
-        bool noArrivalPlanet = false;
-        if ((targetPlanet == null) || noArrivalPlanet)
+        if (targetPlanet == null)
         {
             // Target is punctual, the last data is what we need
             deltaV_end = deltaV_end_main;
@@ -418,9 +608,9 @@ class AnaisTransfer
         start_transfer_eff = start_transfer_eff * start_main_transfer_eff;
         end_transfer_eff = end_main_transfer_eff; // the planet insertion efficiency is supposed to be 1 if target is a planet, so no multiplication to make
 
-        if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
+        if (transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
         {
-            if (total_dv > 1.0)
+            if (total_dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
             {
                 transfer_efficiency = (start_transfer_eff * dv_start + end_transfer_eff * dv_end) / total_dv;
             }
@@ -434,18 +624,37 @@ class AnaisTransfer
         {
             transfer_efficiency = start_transfer_eff;
         }
-        
+
+        return true;
     }
 
 
-    public void calculateReturnToPlanet(double departureTime_)
+    // --------------------------------------------------------------------------------------------
+    //                                    calculateReturnToPlanet
+    // --------------------------------------------------------------------------------------------
+    // DESCRIPTION:
+    //   This function is used to calculate a return-to-planet trajectory. It works for both a 
+    //   local transfer and for a transfer from a moon.
+    //   All parameters of the AnaisTransfer has to be initialized through the constructor, except
+    //   the destinationOrbit data that is useless in this case.
+    // 
+    // RESULT:
+    //   In case of success, the main transfer is calculated in transferOrbit, and the ejection
+    //   trajectory (if transfer from a moon) is calculated in childTransferOrbit. In both cases,
+    //   the transfer (deltaV) and efficiency data are calculated aswell.
+    //   If the configuration is not a return to planet configuration, the function returns without
+    //   doing anything.
+    //   If the calculation failed, transferOrbit and childTransferOrbit are both set to null and
+    //   the function returns.
+    // --------------------------------------------------------------------------------------------
+    public void calculateReturnToPlanet(double departureTime_, bool refineTransfer)
     {
         LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet called");
         if (originOrbit == null) return;
 
-        Orbit mainOrbit = null;
         departureTime = departureTime_;
-        double startEfficiency = 1.0; // default value
+        Orbit mainOrbit = null;
+        bool suggestOrbitInsertion;
 
         // Check planetary configuration
         if (targetPlanet == null)
@@ -455,12 +664,16 @@ class AnaisTransfer
         else if(originOrbit.Planet == targetPlanet)
         {
             LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: Return to mother planet needed");
+            needsToCalculateExitTrajectory = false;
             mainOrbit = originOrbit;
+            suggestOrbitInsertion = true;
         }
         else if(originOrbit.Planet.parentBody == targetPlanet)
         {
             LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: Return to mother planet needed with escape trajectory");
+            needsToCalculateExitTrajectory = true;
             mainOrbit = originOrbit.Planet.orbit;
+            suggestOrbitInsertion = false;
         }
         else
         {
@@ -468,133 +681,55 @@ class AnaisTransfer
             return;
         }
 
-        // The radius we will target for the destination
-        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating stuff");
-        double targetRadius = targetPlanet.TimewarpRadius_Descend;
+        // Make a copy of this because we are going to mess with this...
+        Location tmpLocation = mainOrbit.GetLocation(departureTime);
+        Location startMainLocation = new Location(tmpLocation.time, tmpLocation.planet, tmpLocation.position, tmpLocation.velocity);
+
+
+        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating data");
+        double startEfficiency = 1.0; // default value
+        double targetRadius = targetPlanet.Radius + targetAltitude;
         double targetOrbitalSpeed = Math.Sqrt(targetPlanet.mass / targetRadius);
+        bool includeInsertionCost = (transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS);
 
-        // The target orbit: a perfectly circular orbit 
-        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: creating orbit");
-        Orbit targetOrbit = Orbit_Utils.CreateOrbit(targetRadius, 0.0, 0.0, mainOrbit.direction, mainOrbit.Planet, PathType.Eternal, null);
 
-        if(targetOrbit == null)
+        if ((originOrbit.Planet == targetPlanet) || ((originOrbit.Planet.parentBody == targetPlanet) && !refineTransfer))
         {
-            return; // the risk is purely theoretical actually...
-        }
+            // LOCAL TRANSFER (or interplanetary unrefined tranfer)
+            // --------------
+            bool success = ReturnToPlanetCalculator.calculateTrajectory(targetPlanet, startMainLocation, targetRadius, includeInsertionCost, suggestOrbitInsertion, out transferOrbit);
 
-        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating location");
-        Location startMainLocation = mainOrbit.GetLocation(departureTime);
-
-        // Calculate the Hohmann transfer as the return trajectory
-        LOG(LOG_LEVEL.DEBUG, "calculateReturnToPlanet: calculating Hohmann transfer");
-        Orbit_Utils.CalculateHohmannTransfer(mainOrbit, targetOrbit, startMainLocation, out transferOrbit, out double _);
-
-        if(transferOrbit == null)
-        {
-            return;
-        }
-
-
-        // Part for transfer from a satellite
-        if(originOrbit.Planet.parentBody == targetPlanet)
-        {
-            // We are in the situation in which we return to the mother planet from one of its satellites
-            int nbIterations = 0;
-            double diffExitVelocity = 1.0;
-
-            Orbit childOrbit = originOrbit;
-            Location startShipLocation = childOrbit.GetLocation(departureTime);
-
-            Location ShipLocationAtExitTime = transferOrbit.GetLocation(departureTime);
-            Double2 exitVelocity = ShipLocationAtExitTime.velocity - startMainLocation.velocity;
-
-            do
+            if (!success)
             {
-                nbIterations++;
-
-                // Calculate the corresponding ejection trajectory
-                childTransferOrbit = EjectionTrajectoryCalculator.calculateEjectionTrajectories(childOrbit.Planet, startShipLocation.position.magnitude, startShipLocation.position.AngleRadians, departureTime, exitVelocity.magnitude, exitVelocity.AngleRadians, childOrbit.direction);
-                if (childTransferOrbit == null)
-                {
-                    transferOrbit = null;
-                    return;
-                }
-
-                // Get ejection date
-                double ejectionDate = childTransferOrbit.orbitEndTime;
-
-                LOG(LOG_LEVEL.DEBUG, "Iteration " + nbIterations + ": exit speed = " + exitVelocity.magnitude + " m/s; " + exitVelocity.AngleRadians + " rad; transfer duration = " + (ejectionDate - departureTime) + " s");
-
-                // Get locations of satellite and ship at exit time
-                startMainLocation = mainOrbit.GetLocation(ejectionDate);
-                Location shipLocationAtExitTime = childTransferOrbit.GetLocation(ejectionDate);
-
-                // Ship location in the main planet's frame of reference when it exits
-                Location shipLocationAtExitTimeInMainPlanet = new Location(ejectionDate, targetPlanet, startMainLocation.position + shipLocationAtExitTime.position, startMainLocation.velocity + shipLocationAtExitTime.velocity);
-
-                // Calculate the resulting orbit in the main body, by supposing its velocity matches the planet velocity in direction
-                // This is because we want to calculate a Hohmann transfer from an orbit which speed matches the planet velocity in direction, the orbit itself doesn't matter
-                Location fictiveShipLocationAtExitTimeInMainPlanet = new Location(ejectionDate, targetPlanet, startMainLocation.position + shipLocationAtExitTime.position, startMainLocation.velocity);
-
-                Orbit fictiveExitTrajectory = Orbit.TryCreateOrbit(fictiveShipLocationAtExitTimeInMainPlanet, true, false, out bool success);
-                if (!success)
-                {
-                    transferOrbit = null;
-                    childTransferOrbit = null;
-                    return;
-                }
-
-                // Calculate the Hohmann transfer from that fictive orbit: our exit trajectory should match that Hohmann transfer
-                Orbit_Utils.CalculateHohmannTransfer(fictiveExitTrajectory, targetOrbit, fictiveShipLocationAtExitTimeInMainPlanet, out transferOrbit, out double _);
-
-                if(transferOrbit == null)
-                {
-                    transferOrbit = null;
-                    childTransferOrbit = null;
-                    return;
-                }
-
-                // Calculate the difference in exit velocity
-                ShipLocationAtExitTime = transferOrbit.GetLocation(transferOrbit.orbitStartTime);
-                exitVelocity = ShipLocationAtExitTime.velocity - startMainLocation.velocity;
-                diffExitVelocity = (ShipLocationAtExitTime.velocity - shipLocationAtExitTimeInMainPlanet.velocity).magnitude;
-                LOG(LOG_LEVEL.DEBUG, "Iteration " + nbIterations + ": diffExitVelocity = " + diffExitVelocity + "; ShipLocationAtExitTime.velocity = " + ShipLocationAtExitTime.velocity + "; ship velocity = " + shipLocationAtExitTimeInMainPlanet.velocity.magnitude);
-
-            } while ((nbIterations < 20) && (diffExitVelocity > 0.1));
-
-            // Exit if research fails
-            if(nbIterations == 20)
-            {
-                LOG(LOG_LEVEL.DEBUG, "ERROR: AnaisTransfer calculation failed by excessive number of iterations");
-                transferOrbit = null;
-                childTransferOrbit = null;
+                LOG(LOG_LEVEL.WARNING, "Return to planet trajectory could not be calculated - abort calculation");
                 return;
             }
 
-            // Calculate DV and efficiency at start
-            Location startShipLocationAfterBurn = childTransferOrbit.GetLocation(departureTime);
-            calculateDeltaVandTransferEfficiency(startShipLocation.velocity, startShipLocationAfterBurn.velocity, out deltaV_start, out dv_start, out startEfficiency);
-        }
-        else
-        {
             // dv_start and efficiency calculation for a local transfer
+            Location startLocation_originOrbit = mainOrbit.GetLocation(departureTime);
             Location startLocation_mainTransfer = transferOrbit.GetLocation(departureTime);
-            deltaV_start = startLocation_mainTransfer.velocity - startMainLocation.velocity;
-            dv_start = deltaV_start.magnitude;
-            startEfficiency = 1.0;
-        }
+            
+            calculateDeltaVandTransferEfficiency(startLocation_originOrbit.velocity, startLocation_mainTransfer.velocity, out deltaV_start, out dv_start, out startEfficiency);
 
+            total_dv = dv_start;
 
-        arrivalTime = transferOrbit.orbitEndTime;
-        Location endLocation_mainTransfer = transferOrbit.GetLocation(arrivalTime);
-        
-        dv_end = Math.Abs(endLocation_mainTransfer.velocity.magnitude - targetOrbitalSpeed);
+            // calculate dv_end and associated efficiency if relevant
+            if (transferOrbit.PathType == PathType.Encounter)
+            {
+                arrivalTime = transferOrbit.orbitEndTime;
+                Location endLocation_mainTransfer_ = transferOrbit.GetLocation(arrivalTime);
 
-        total_dv = dv_start + dv_end;
+                dv_end = Math.Abs(endLocation_mainTransfer_.velocity.magnitude - targetOrbitalSpeed);
 
-        if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
-        {
-            if (total_dv > 1.0)
+                total_dv += dv_end;
+            }
+            else
+            {
+                dv_end = 0.0;
+            }
+
+            // calculate efficiency
+            if (total_dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
             {
                 transfer_efficiency = (startEfficiency * dv_start + dv_end) / total_dv;
             }
@@ -602,12 +737,161 @@ class AnaisTransfer
             {
                 transfer_efficiency = 1.0; // not significant
             }
+
+            return;
         }
-        else
+        else 
         {
-            transfer_efficiency = startEfficiency;
+            // INTERPLANETARY TRANSFER
+            // -----------------------
+            bool success = ReturnToPlanetCalculator.calculateTrajectory(targetPlanet, startMainLocation, targetRadius, includeInsertionCost, suggestOrbitInsertion: false, out transferOrbit);
+
+            if (!success)
+            {
+                LOG(LOG_LEVEL.WARNING, "Return to planet trajectory could not be calculated - abort calculation");
+                return;
+            }
+
+            // The orbit of the child body
+            Orbit childPlanetOrbit = originOrbit.Planet.orbit;
+
+            // Location of ship at start time
+            Location startLocation = originOrbit.GetLocation(departureTime);
+
+            // time at which the ship exits the SOI (first initialized at departure time)
+            double exitTime = departureTime;
+
+            // Planet location when the ship exists the SOI
+            Location childPlanetLocation = childPlanetOrbit.GetLocation(exitTime);
+
+            // exitVelocity_ReturnTrajectory: the velocity at which the ship exits the SOI (in the parent body's frame of reference) - evaluated from the transfer evaluated by ReturnToPlanetCalculator
+            Double2 exitVelocity_ReturnTrajectory = transferOrbit.GetLocation(exitTime).velocity - childPlanetLocation.velocity;
+
+            // exitVelocity_Ejection: same thing, but evaluated from the ejection trajectory from the child body - initialised with the velocity calculated above
+            Double2 exitVelocity_Ejection = exitVelocity_ReturnTrajectory;
+
+            uint nbIterations = 0;
+            success = false;
+
+            Double2 deltaV = new Double2(0.0, 0.0);
+
+            Vector2D_FixedPointSolver theSolver = new Vector2D_FixedPointSolver();
+
+            // Iterate until we find a compatible transfer and ejection trajectory
+            // -------------------------------------------------------------------
+            do
+            {
+                nbIterations++;
+                LOG(LOG_LEVEL.DEBUG, " Calculate return to planet trajectory: iteration " + nbIterations + ": exitVelocity_Ejection = (" + exitVelocity_Ejection.x + ", " + exitVelocity_Ejection.y + ")");
+
+                // Calculate the exit trajectory that satisfies all those parameters: starting position, exit velocity
+                childTransferOrbit = EjectionTrajectoryCalculator.calculateEjectionTrajectories(originOrbit.Planet, startLocation, departureTime, exitVelocity_Ejection, originOrbit.direction, exit: true);
+
+                if (childTransferOrbit == null)
+                {
+                    transferOrbit = null;
+                    LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate Ejection trajectory (iteration " + nbIterations + ")");
+                    return;
+                }
+
+                // calculate exit time
+                exitTime = childTransferOrbit.orbitEndTime;
+
+                // calculate location of child planet at exit time
+                childPlanetLocation = childPlanetOrbit.GetLocation(exitTime);
+
+                // calculate exit location in the child planet reference frame
+                Location exitLocation = childTransferOrbit.GetLocation(exitTime);
+                
+                // calculate the starting position and velocity for the return to mother planet trajectory
+                startMainLocation.position = childPlanetLocation.position + exitLocation.position;
+                startMainLocation.velocity = childPlanetLocation.velocity; // We consider the exiting ship has velocity of the planet; the calculator is expected to give a transfer which matches ejection speed
+                startMainLocation.time = exitTime;
+
+                // calculate opimal return to planet trajectory from the ejection point
+                bool calculationOK = ReturnToPlanetCalculator.calculateTrajectory(targetPlanet, startMainLocation, targetRadius, includeInsertionCost, suggestOrbitInsertion: false, out transferOrbit);
+
+                if (!calculationOK)
+                {
+                    LOG(LOG_LEVEL.WARNING, "Return to planet trajectory could not be calculated - abort calculation");
+                    transferOrbit = null;
+                    childTransferOrbit = null;
+                    return;
+                }
+
+                // evaluate new exit velocity
+                exitVelocity_ReturnTrajectory = transferOrbit.GetLocation(exitTime).velocity - childPlanetLocation.velocity;
+                deltaV = exitVelocity_ReturnTrajectory - exitVelocity_Ejection;
+
+                // evaluate success criteria : the exit velocity that results from ejection has to match the exit velocity deduced from the return trajectory calculation
+                if (deltaV.magnitude < 0.1)
+                {
+                    LOG(LOG_LEVEL.DEBUG, "   CALCULATION SUCCESSFUL after " + nbIterations + " iterations (delta = " + deltaV.magnitude + " m/s)");
+                    LOG(LOG_LEVEL.DEBUG, "     Final value: Vx = " + exitVelocity_Ejection.x + "; Vy = " + exitVelocity_Ejection.y);
+                    success = true;
+                }
+
+                // evaluate new exit velocity vector for next iteration
+                if (!success)
+                {
+                    theSolver.addPoint(exitVelocity_Ejection, exitVelocity_ReturnTrajectory);
+                    exitVelocity_Ejection = theSolver.GetEstimatedSolution();
+                }
+
+            } while ((nbIterations < 20) && (success == false));
+
+
+            // Exit if the transfer couldn't be calculated
+            // -------------------------------------------
+            if (!success)
+            {
+                LOG(LOG_LEVEL.DEBUG, "ERROR: Failed to calculate interplanetary transfer - too many iterations");
+                transferOrbit = null;
+                childTransferOrbit = null;
+                return;
+            }
+
+            // Calculate all data and efficiency now
+            // -------------------------------------
+            // Calculate deltaV and transfer efficiency at start, from ship orbit to child transfer orbit
+            calculateDeltaVandTransferEfficiency(startLocation.velocity, childTransferOrbit.GetLocation(departureTime).velocity, out deltaV_start, out dv_start, out startEfficiency);
+
+            // Calculate deltaV and transfer efficiency for start at main transfer: from child planet velocity to main transfer velocity
+            calculateDeltaVandTransferEfficiency(childPlanetLocation.velocity, transferOrbit.GetLocation(exitTime).velocity, out Double2 deltaV_start_main, out double dv_start_main, out double startMainEfficiency);
+
+            total_dv = dv_start;
+
+            // calculate dv_end and associated efficiency if relevant
+            if (transferOrbit.PathType == PathType.Encounter)
+            {
+                arrivalTime = transferOrbit.orbitEndTime;
+                Location endLocation_mainTransfer_ = transferOrbit.GetLocation(arrivalTime);
+
+                dv_end = Math.Abs(endLocation_mainTransfer_.velocity.magnitude - targetOrbitalSpeed);
+
+                total_dv += dv_end;
+            }
+            else
+            {
+                dv_end = 0.0;
+            }
+
+
+            // global efficiency - end efficiency is 1 since it's a tangent insertion
+            startEfficiency *= startMainEfficiency;
+
+            // calculate efficiency
+            if (total_dv > C_DELTA_V_SIGNIFICANCY_THRESHOLD)
+            {
+                transfer_efficiency = (startEfficiency * dv_start + dv_end) / total_dv;
+            }
+            else
+            {
+                transfer_efficiency = 1.0; // not significant
+            }
+
+            return;
         }
-        
     }
 
     public bool isValid()

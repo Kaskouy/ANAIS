@@ -31,6 +31,8 @@ public class AnaisDataSet
     private ANAIS_Settings _settings = new ANAIS_Settings(); // the player settings from the ANAIS control panel
     private NavigationVariables _NavVariables = new NavigationVariables(); // Used to store some temp variables transmitted to the calculation algorithms
 
+    private double timeWarpFactor = 1.0;
+
     // Output data
     // -----------
     public bool _finalApproachMode = false;
@@ -77,7 +79,6 @@ public class AnaisDataSet
 
         // If target is a planet, memorize it
         // ----------------------------------
-        Planet loc_targetPlanet = null;
         MapPlanet targetMapPlanet = target as MapPlanet;
         if (targetMapPlanet != null) _targetPlanet = targetMapPlanet.planet;
 
@@ -94,6 +95,9 @@ public class AnaisDataSet
         // ----------------------------------
         _NavVariables.Copy(ANAIS_Panel._NavVariables);
         ANAIS_Panel._NavVariables.Reset();
+
+        // time warp index
+        timeWarpFactor = SFS.World.WorldTime.main.timewarpSpeed;
 
         _hasInputData = true;
     }
@@ -125,6 +129,8 @@ public class AnaisDataSet
             preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
             preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
         }
+
+        double targetAltitude = _NavVariables._targetAltitude;
 
         // RETRIEVE PLAYER/TARGET ORBIT + Evaluate transfer configuration
         // ----------------------------
@@ -284,7 +290,7 @@ public class AnaisDataSet
         if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && ANAIScalculationAllowed && _settings._showTransfer)
         {
             // calculate the transfer for the memorized encounter date
-            _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet, _settings._transferType);
+            _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet, targetAltitude, _settings._transferType);
             _anaisTransfer.calculateTransfer(_timeNow, encounterDate);
 
             // check if we are still on an encounter trajectory - if not, we exit that mode
@@ -307,7 +313,7 @@ public class AnaisDataSet
         if (!_finalApproachMode && !iscurrentlyOnEncounterTrajectory && (isRendezVousTrajectory || isReturnToMotherPlanet) && ANAIScalculationAllowed && _settings._showTransfer)
         {
             // Calculate the ANAIS transfer
-            _anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, _targetPlanet, _timeNow, _settings._transferType);
+            _anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, _targetPlanet, targetAltitude, _timeNow, _settings._transferType, timeWarpFactor);
 
             // If the calculation is successful, check if we are on encounter mode
             if ((_anaisTransfer != null) && _anaisTransfer.isValid() && isRendezVousTrajectory && (_anaisTransfer.dv_start < AnaisManager.C_DELTAV_THRESHOLD_ENTER_ENCOUNTER_MODE))
@@ -453,10 +459,19 @@ public class AnaisDataSet
             Orbit ejectionOrbit = _anaisTransfer.childTransferOrbit;
 
             Location locationStart = _anaisTransfer.originOrbit.GetLocation(_anaisTransfer.departureTime);
-            Location locationEnd = transferOrbit.GetLocation(transferOrbit.orbitEndTime);
 
+            // start label
             string speedText = Units.ToVelocityString(_anaisTransfer.dv_start, true);
-            string startLabel = "Transfer: ΔV = " + speedText;
+            string startLabel;
+
+            if ((_anaisTransfer.transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS) && (_anaisTransfer.targetPlanet != null) && (transferOrbit.PathType == PathType.Eternal)) 
+            {
+                // Special label for an insertion in orbit (only if we have an eternal trajectory in rendez-vous mode)
+                startLabel = "Insertion orbit: ΔV = " + speedText; 
+            } 
+            else { startLabel = "Transfer: ΔV = " + speedText; }
+
+            // end label
             speedText = Units.ToVelocityString(_anaisTransfer.dv_end, true);
             string endLabel;
 
@@ -466,27 +481,37 @@ public class AnaisDataSet
             }
             else
             {
-                endLabel = "Insertion low orbit: ΔV = " + speedText;
+                endLabel = "Insertion orbit: ΔV = " + speedText;
             }
 
+            // transfer color
             Color textColor = Drawing_Utils.GetEfficiencyTransferColor(_anaisTransfer.transfer_efficiency);
             Color lineColor = textColor;
             lineColor.a = 0.9f;
 
-            if (_anaisTransfer.dv_start > 0.1)
+            if ((_anaisTransfer.dv_start > 0.1) && (_anaisTransfer.areDeltaV_valuesSignificant()))
             {
                 MapDrawer.DrawPointWithText(15, textColor, startLabel, 40, textColor, MapDrawer.GetPosition(locationStart), locationStart.position.normalized, 4, 4);
             }
-
-            if(_settings._transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
-            {
-                // Rendez-vous mode: Show the arrival point and the arrival delta-V
-                MapDrawer.DrawPointWithText(15, textColor, endLabel, 40, textColor, MapDrawer.GetPosition(locationEnd), locationEnd.position.normalized, 4, 4);
-            }
             else
             {
-                // Fly-by mode: only show the arrival point
-                MapDrawer.DrawPoint(15, textColor, MapDrawer.GetPosition(locationEnd), 4, true, 4);
+                MapDrawer.DrawPoint(15, textColor, MapDrawer.GetPosition(locationStart), 4, true, 4);
+            }
+
+            if(transferOrbit.PathType == PathType.Encounter)
+            {
+                Location locationEnd = transferOrbit.GetLocation(transferOrbit.orbitEndTime);
+
+                if ((_settings._transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS) && (_anaisTransfer.areDeltaV_valuesSignificant()))
+                {
+                    // Rendez-vous mode: Show the arrival point and the arrival delta-V
+                    MapDrawer.DrawPointWithText(15, textColor, endLabel, 40, textColor, MapDrawer.GetPosition(locationEnd), locationEnd.position.normalized, 4, 4);
+                }
+                else
+                {
+                    // Fly-by mode (or non significant deltaV values due to high time-warp mode): only show the arrival point
+                    MapDrawer.DrawPoint(15, textColor, MapDrawer.GetPosition(locationEnd), 4, true, 4);
+                }
             }
             
             transferOrbit.DrawDashed(drawStats: false, drawStartText: false, drawEndText: false, lineColor);
@@ -494,6 +519,17 @@ public class AnaisDataSet
             if (ejectionOrbit != null)
             {
                 ejectionOrbit.DrawDashed(drawStats: false, drawStartText: false, drawEndText: false, lineColor);
+            }
+
+            // If a planet is targeted in rendez-vous-mode, render the targeted orbit - supposing we are not already at the targeted altitude (in this case, the transfer orbit calculated is the final orbit, hence the third condition)
+            if((_anaisTransfer.transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS) && (_anaisTransfer.targetPlanet != null) && (transferOrbit.PathType == PathType.Encounter))
+            {
+                double finalOrbitRadius = _anaisTransfer.targetPlanet.Radius + _anaisTransfer.targetAltitude;
+                Orbit finalOrbit = Orbit_Utils.CreateOrbit(finalOrbitRadius, 0.0, 0.0, -1, _anaisTransfer.targetPlanet, PathType.Eternal, null);
+                finalOrbit.periapsisPassageTime = SFS.World.WorldTime.main.worldTime;
+                finalOrbit.orbitStartTime = finalOrbit.periapsisPassageTime;
+
+                finalOrbit.DrawDashed(drawStats: false, drawStartText: false, drawEndText: false, lineColor);
             }
         }
 
@@ -617,6 +653,7 @@ public class AnaisDataSet
         _targetPlanet = null;
         _settings.SetDefaultValues();
         _NavVariables.Reset();
+        timeWarpFactor = 1.0;
 
         // Output data
         _finalApproachMode = false;

@@ -11,7 +11,10 @@ using SFS.World.Maps;
 
 class AnaisTransferCalculator
 {
-    
+    // C_MINIMUM_PERIOD_FOR_ACCURATE_CALCULATION: If the player orbit's period is lower than this, ejection trajectory calculation will be skipped for interplanetary transfers
+    const double C_MINIMUM_PERIOD_FOR_ACCURATE_CALCULATION = 0.6; // 0.6 seconds - if player orbit's period is lower than this (in real time - factoring time warp factor), only the main transfer will be shown in case of interplanetary transfer
+
+
     // FUNCTIONS TO CALCULATE THE TIME RANGE FOR THE RESEARCH OF AN OPTIMAL TRANSFER
     // -----------------------------------------------------------------------------
     private static double getClosestPassageTimeAtArg(Orbit orbit, double time_ref, double arg)
@@ -210,7 +213,7 @@ class AnaisTransferCalculator
 
     // FUNCTION THAT COMPUTES A LIST OF TRANSFERS EVENLY DISPATCHED IN TERMS OF ARRIVAL TIME
     // -------------------------------------------------------------------------------------
-    public static List<AnaisTransfer> calculateTransferList(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double start_time, double arrival_time_start_window, double arrival_time_end_window, ANAIS_Settings.E_TRANSFER_TYPE transferType)
+    public static List<AnaisTransfer> calculateTransferList(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double targetAltitude, double start_time, double arrival_time_start_window, double arrival_time_end_window, ANAIS_Settings.E_TRANSFER_TYPE transferType)
     {
         const uint C_TIME_INTERVALS_PER_PERIOD = 12; // On a full period of target object, the time window would be splitted in that many periods
         
@@ -230,7 +233,7 @@ class AnaisTransferCalculator
 
         for(int i = (int)nbTimeIntervals; (i >= 0) && !maxVelocityExcessed; i--) // loop from the end to be able to stop if the transfers at the sooner dates happens to be over-energetic
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, targetAltitude, transferType);
 
             // calculate a transfer for that arrival time
             double arrival_time = arrival_time_start_window + i * time_interval;
@@ -263,7 +266,7 @@ class AnaisTransferCalculator
         // ------------------------------------------
         if(anaisTransferList.Count > 1)
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, targetAltitude, transferType);
 
             // the time interval between the 2 last points
             double lastTimeInterval = anaisTransferList[anaisTransferList.Count - 1].arrivalTime - anaisTransferList[anaisTransferList.Count - 2].arrivalTime;
@@ -284,7 +287,7 @@ class AnaisTransferCalculator
         // ------------------------------------------
         if(anaisTransferList.Count > 1)
         {
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, targetAltitude, transferType);
 
             // the time interval between the 2 first points
             double firstTimeInterval = anaisTransferList[1].arrivalTime - anaisTransferList[0].arrivalTime;
@@ -306,7 +309,7 @@ class AnaisTransferCalculator
 
     // CALCULATES THE OPTIMAL TRANSFER WITHIN THE SPECIFIED TIME RANGE
     // ---------------------------------------------------------------
-    public static AnaisTransfer calculateAnaisTransferForArrivalTimeRange(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double departureTime, double start_arrivalTime, double end_arrivalTime, ANAIS_Settings.E_TRANSFER_TYPE transferType)
+    public static AnaisTransfer calculateAnaisTransferForArrivalTimeRange(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double targetAltitude, double departureTime, double start_arrivalTime, double end_arrivalTime, ANAIS_Settings.E_TRANSFER_TYPE transferType, double timeWarpFactor)
     {
         // Controls
         // --------
@@ -319,7 +322,7 @@ class AnaisTransferCalculator
         // --------------------------------------------------------------------------------------------
         LOG(LOG_LEVEL.DEBUG, "  Building transfer list");
 
-        List<AnaisTransfer> anaisTransferList = calculateTransferList(playerOrbit, targetOrbit, targetPlanet, departureTime, start_arrivalTime, end_arrivalTime, transferType);
+        List<AnaisTransfer> anaisTransferList = calculateTransferList(playerOrbit, targetOrbit, targetPlanet, targetAltitude, departureTime, start_arrivalTime, end_arrivalTime, transferType);
 
         if (anaisTransferList.Count < 3)
         {
@@ -364,6 +367,104 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "  Minimum found at position " + i_dvMini + "; target ΔV = " + anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType));
         }
 
+        // In the case of an interplanetary transfer, evaluate accurately the serious candidates
+        // -------------------------------------------------------------------------------------
+        bool needToRefineTransfer = playerOrbit.Planet.parentBody == targetOrbit.Planet; // transfer needs to be refined in case of interplanetary transfer only
+
+        // if player orbit is periodic but the period is too low compared to the time-warp factor, then only the main transfer is took into account
+        if ((playerOrbit.pathType == PathType.Eternal) && (playerOrbit.period > 0.0) && (playerOrbit.period / timeWarpFactor < C_MINIMUM_PERIOD_FOR_ACCURATE_CALCULATION)) needToRefineTransfer = false;
+
+        if (needToRefineTransfer)
+        {
+            // First refine the 3 best transfers
+            // transfer 1
+            bool transferSuccessfullyRefined = anaisTransferList[i_dvMini - 1].refineTransferCalculation();
+
+            if(!transferSuccessfullyRefined)
+            {
+                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                return null;
+            }
+
+            double deltaV_transfer1 = anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType);
+
+            // transfer 2
+            transferSuccessfullyRefined = anaisTransferList[i_dvMini].refineTransferCalculation();
+
+            if (!transferSuccessfullyRefined)
+            {
+                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                return null;
+            }
+
+            double deltaV_transfer2 = anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType);
+
+            // transfer 3
+            transferSuccessfullyRefined = anaisTransferList[i_dvMini + 1].refineTransferCalculation();
+
+            if (!transferSuccessfullyRefined)
+            {
+                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                return null;
+            }
+
+            double deltaV_transfer3 = anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType);
+
+            while ((i_dvMini > 0) && (i_dvMini < anaisTransferList.Count - 1) &&                        // i_dvMini is in range (must have a predecessor and a successor)...
+                   ((deltaV_transfer1 < deltaV_transfer2) || (deltaV_transfer3 < deltaV_transfer2)))   // ... and deltaV_transfer2 is not the minimum value
+            {
+                // case when the third transfer is the cheapest
+                if (deltaV_transfer3 < deltaV_transfer2)
+                {
+                    // transfer 3 is the cheapest - evaluate the following one to bound the minimum
+                    i_dvMini++;
+
+                    if (i_dvMini < anaisTransferList.Count - 1)
+                    {
+                        // shift all values
+                        deltaV_transfer1 = deltaV_transfer2;
+                        deltaV_transfer2 = deltaV_transfer3;
+
+                        // evaluate accurately the new "transfer 3" 
+                        transferSuccessfullyRefined = anaisTransferList[i_dvMini + 1].refineTransferCalculation();
+
+                        if (!transferSuccessfullyRefined)
+                        {
+                            LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                            return null;
+                        }
+
+                        deltaV_transfer3 = anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType);
+                    }
+                }
+
+                // case when the first transfer is the cheapest
+                else if (deltaV_transfer1 < deltaV_transfer2)
+                {
+                    // transfer 1 is the cheapest - evaluate the previous one to bound the minimum
+                    i_dvMini--;
+
+                    if(i_dvMini > 0)
+                    {
+                        // shift all values
+                        deltaV_transfer3 = deltaV_transfer2;
+                        deltaV_transfer2 = deltaV_transfer1;
+
+                        // evaluate accurately the new "transfer 1" 
+                        transferSuccessfullyRefined = anaisTransferList[i_dvMini - 1].refineTransferCalculation();
+
+                        if (!transferSuccessfullyRefined)
+                        {
+                            LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                            return null;
+                        }
+
+                        deltaV_transfer1 = anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType);
+                    }
+                }
+            } // end while i_dvMini in range and transfer 2 is not the minimal transfer
+        }
+
         // Search for a more accurate minimum around the located minimum
         // -------------------------------------------------------------
         NumericalMinimumCalculator minCalculator = NumericalMinimumCalculator.createInstance(anaisTransferList[i_dvMini - 1].arrivalTime, anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType),
@@ -390,13 +491,18 @@ class AnaisTransferCalculator
             double newArrivalTime = minCalculator.calculateNewGuess();
 
             // Calculate the transfer at new date
-            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, transferType);
+            AnaisTransfer anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, targetPlanet, targetAltitude, transferType);
             anaisTransfer.calculateTransfer(departureTime, newArrivalTime);
 
             if (anaisTransfer.transferOrbit == null)
             {
                 LOG(LOG_LEVEL.DEBUG, "  Error - Anais transfer calculation failed for t = " + newArrivalTime + "; Give-up") ;
                 return null;
+            }
+
+            if(needToRefineTransfer)
+            {
+                anaisTransfer.refineTransferCalculation();
             }
             
             // memorize the best transfer
@@ -437,7 +543,7 @@ class AnaisTransferCalculator
 
     // MAIN FUNCTION
     // -------------
-    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double timeNow, ANAIS_Settings.E_TRANSFER_TYPE transferType)
+    public static AnaisTransfer calculateTransferToTarget(Orbit playerOrbit, Orbit targetOrbit, Planet targetPlanet, double targetAltitude, double timeNow, ANAIS_Settings.E_TRANSFER_TYPE transferType, double timeWarpFactor)
     {
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
         LOG(LOG_LEVEL.DEBUG, "---   NEW ANAIS TRANSFER CALCULATION    ---");
@@ -447,9 +553,13 @@ class AnaisTransferCalculator
         if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))
         {
             // Return to mother planet
-            AnaisTransfer anaisReturnTransfer = new AnaisTransfer(playerOrbit, null, targetPlanet, transferType); // No destination orbit in this case
+            AnaisTransfer anaisReturnTransfer = new AnaisTransfer(playerOrbit, null, targetPlanet, targetAltitude, transferType); // No destination orbit in this case
 
-            anaisReturnTransfer.calculateReturnToPlanet(timeNow);
+            // if player orbit is periodic but the period is too low compared to the time-warp factor, then only the main transfer is took into account
+            bool refineTransfer = true;
+            if ((playerOrbit.pathType == PathType.Eternal) && (playerOrbit.period > 0.0) && (playerOrbit.period / timeWarpFactor < C_MINIMUM_PERIOD_FOR_ACCURATE_CALCULATION)) refineTransfer = false;
+            
+            anaisReturnTransfer.calculateReturnToPlanet(timeNow, refineTransfer);
 
             return anaisReturnTransfer;
         }
@@ -492,7 +602,7 @@ class AnaisTransferCalculator
 
         // Calculate the optimal transfer on that time range
         // -------------------------------------------------
-        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, timeNow, startTime, endTime, transferType);
+        AnaisTransfer newAnaisTransfer = calculateAnaisTransferForArrivalTimeRange(playerOrbit, targetOrbit, targetPlanet, targetAltitude, timeNow, startTime, endTime, transferType, timeWarpFactor);
         return newAnaisTransfer;
     }
 

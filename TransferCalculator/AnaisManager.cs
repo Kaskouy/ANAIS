@@ -341,7 +341,6 @@ class AnaisManager
                     //Stopwatch stopwatch_calculation = Stopwatch.StartNew();
                     bool transferCalculated = anaisWorkingDataSet.CalculateTransfer(ref finalApproachMode, ref isOnEncounterTrajectory, ref encounterDate, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2, ref allowANAIStransferCalculation);
                     //stopwatch_calculation.Stop();
-                    
 
                     if (anaisManagerState.NeedsReset())
                     {
