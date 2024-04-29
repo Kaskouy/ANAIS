@@ -103,9 +103,14 @@ class EjectionTrajectoryCalculator
         }
     }
 
-    public static Orbit calculateEjectionTrajectories(Planet planet, double startRadius, double startArgument, double startTime, double escapeVelocity, double heading, int direction, bool exit = true)
+    public static Orbit calculateEjectionTrajectories(Planet planet, Location startLocation, double startTime, Double2 exitVelocity, int direction, bool exit = true)
     {
         // List of variables
+        double startRadius = startLocation.position.magnitude;
+        double startArgument = startLocation.position.AngleRadians;
+        double escapeVelocity = exitVelocity.magnitude;
+        double heading = exitVelocity.AngleRadians;
+
         double delta = startArgument - heading;
 
         double sign = 1.0;
