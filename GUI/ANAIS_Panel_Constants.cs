@@ -64,8 +64,31 @@ class ANAIS_Panel_Constants
 
     public const string C_BUTTON_TOGGLE_TRANSFER_MODE_TEXT = "◄►";
 
+
+    // Target altitude text label
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_WIDTH = 160;
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_HEIGHT = C_LABEL_HEIGHT;
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_POS_X = C_LABEL_TEXT_TARGET_ALTITUDE_WIDTH / 2 - C_MAIN_WINDOW_WIDTH / 2 + C_HORIZONTAL_MARGIN; // Placed on the left side of the main window, with a 10 pixels margin from the border
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_POS_Y = C_LABEL_TEXT_TRANSFER_MODE_POS_Y - 45; // 45 pixels below the separator above
+
+    public const string C_LABEL_TEXT_TARGET_ALTITUDE_TEXT = "Target altitude:";
+
+    // Target altitude
+    public const int C_TEXT_TARGET_ALTITUDE_WIDTH = 160;
+    public const int C_TEXT_TARGET_ALTITUDE_HEIGHT = 35;
+    public const int C_TEXT_TARGET_ALTITUDE_POS_X = C_LABEL_TEXT_TARGET_ALTITUDE_POS_X + C_LABEL_TEXT_TARGET_ALTITUDE_WIDTH / 2 + C_TEXT_TARGET_ALTITUDE_WIDTH / 2 + 30; // 20 pixels from the left of previous label
+    public const int C_TEXT_TARGET_ALTITUDE_POS_Y = C_LABEL_TEXT_TARGET_ALTITUDE_POS_Y - 3;
+
+    // Target altitude unit text label
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_WIDTH = 30;
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_HEIGHT = C_LABEL_HEIGHT;
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_POS_X = C_TEXT_TARGET_ALTITUDE_POS_X + C_TEXT_TARGET_ALTITUDE_WIDTH / 2 + C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_WIDTH / 2 + 20; // Placed on the left side of the main window, with a 10 pixels margin from the border
+    public const int C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_POS_Y = C_LABEL_TEXT_TARGET_ALTITUDE_POS_Y; // 45 pixels below the separator above
+
+    public const string C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_TEXT = "Km";
+
     // Second separator
-    public const int C_SECOND_SEPARATOR_Y_POS = C_LABEL_TEXT_TRANSFER_MODE_POS_Y - 40;
+    public const int C_SECOND_SEPARATOR_Y_POS = C_LABEL_TEXT_TARGET_ALTITUDE_POS_Y - 40;
 
     // "Approach lines" label
     public const int C_LABEL_APPROACH_LINES_WIDTH = 200;

@@ -18,7 +18,7 @@ using static ANAIS_Panel_Constants;
 class ANAIS_Panel
 {
     // GameObject to attach the window.
-    private static GameObject _windowHolder;
+    private static GameObject _windowHolder = null;
 
     // The set of parameters associated to the panel
     public static ANAIS_Settings _settings = null;
@@ -30,12 +30,13 @@ class ANAIS_Panel
     private const string C_ANAIS_PANEL_IDENTIFIER = "ANAIS.Panel";
 
     // Widget list
-    private static ClosableWindow _mainWindow;
+    private static ClosableWindow _mainWindow = null;
 
     private static Toggle _showTransfer_toggle = null;
     private static SFS.UI.ModGUI.Button _transferModeButton = null;
     private static Label _label_text_transfer_mode = null;
     private static Label _label_transfer_mode = null;
+    private static TextInput _textInput_target_altitude = null;
     private static TextInput _textInput_nb_max_turns = null;
     private static SFS.UI.ModGUI.Button _decreaseNbMaxTurnsButton = null;
     private static SFS.UI.ModGUI.Button _increaseNbMaxTurnsButton = null;
@@ -112,6 +113,18 @@ class ANAIS_Panel
         _showTransfer_toggle = Builder.CreateToggle(_mainWindow, getShowTransferValue, C_TOGGLE_SHOW_TRANSFER_POS_X, C_TOGGLE_SHOW_TRANSFER_POS_Y, toggleShowTransfer);
         _showTransfer_toggle.Size = new Vector2(C_TOGGLE_SHOW_TRANSFER_SIZE_X, C_TOGGLE_SHOW_TRANSFER_SIZE_Y);
 
+        // Label "Target altitude"
+        Label label_targetAltitude = Builder.CreateLabel(_mainWindow, C_LABEL_TEXT_TARGET_ALTITUDE_WIDTH, C_LABEL_TEXT_TARGET_ALTITUDE_HEIGHT, C_LABEL_TEXT_TARGET_ALTITUDE_POS_X, C_LABEL_TEXT_TARGET_ALTITUDE_POS_Y, C_LABEL_TEXT_TARGET_ALTITUDE_TEXT);
+        label_targetAltitude.TextAlignment = TMPro.TextAlignmentOptions.Left;
+
+        _textInput_target_altitude = Builder.CreateTextInput(_mainWindow, C_TEXT_TARGET_ALTITUDE_WIDTH, C_TEXT_TARGET_ALTITUDE_HEIGHT, C_TEXT_TARGET_ALTITUDE_POS_X, C_TEXT_TARGET_ALTITUDE_POS_Y, AltitudeFromGameUnitToPanelString(_NavVariables._targetAltitude), ANAIS_Panel.onTargetAltitudeChanged);
+        _textInput_target_altitude.field.characterValidation = TMPro.TMP_InputField.CharacterValidation.Decimal; // Only allows digits to be entered
+        _textInput_target_altitude.field.characterLimit = 11; // Max 10 digits + 1 comma
+        _textInput_target_altitude.field.SetGlobalPointSize(24.0f);
+
+        // Label "Target altitude unit"
+        Label label_targetAltitudeUnit = Builder.CreateLabel(_mainWindow, C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_WIDTH, C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_HEIGHT, C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_POS_X, C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_POS_Y, C_LABEL_TEXT_TARGET_ALTITUDE_UNIT_TEXT);
+        label_targetAltitudeUnit.TextAlignment = TMPro.TextAlignmentOptions.Left;
 
         // Second separator
         Builder.CreateSeparator(_mainWindow, C_SEPARATOR_WIDTH, posX: 0, C_SECOND_SEPARATOR_Y_POS);
@@ -242,6 +255,106 @@ class ANAIS_Panel
         ANAIS_Config.Save();
     }
 
+    private static double AltitudeFromPanelToGameUnit(double alt)
+    {
+        return alt * 1000.0;
+    }
+
+    private static double AltitudeFromGameToPanelUnit(double alt)
+    {
+        //double panelAlt = alt / 1000.0;
+        //panelAlt.Round(3);
+        return alt / 1000.0;
+    }
+
+    private static string AltitudeFromGameUnitToPanelString(double alt)
+    {
+        double panelAlt = Math.Truncate(alt) / 1000.0;
+        //return panelAlt.ToString(3, false);
+        return panelAlt.ToString();
+    }
+
+    // Target altitude
+    private static void onTargetAltitudeChanged(string str)
+    {
+        bool ok = double.TryParse(str, out double altitude);
+
+        if (ok)
+        {
+            altitude = AltitudeFromPanelToGameUnit(altitude);
+
+            if (altitude < 0.0)
+            {
+                // entry is below acceptable minimum; force to lowest value
+                altitude = 0.0;
+                _textInput_target_altitude.Text = altitude.ToString(); // Warning: calls onTargetAltitudeChanged again
+                _NavVariables._targetAltitude = altitude;
+            }
+            else if (altitude > _NavVariables._maxTargetAltitude)
+            {
+                // entry is beyond acceptable maximum; force to highest value
+                altitude = _NavVariables._maxTargetAltitude;
+                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(altitude); // Warning: calls onTargetAltitudeChanged again
+                _NavVariables._targetAltitude = altitude;
+            }
+            else
+            {
+                // Correct entry: update internal variable
+                _NavVariables._targetAltitude = altitude;
+            }
+        }
+        else
+        {
+            _textInput_target_altitude.Text = "0.0"; // Warning: calls onTargetAltitudeChanged again
+            _NavVariables._targetAltitude = 0.0;
+        }
+    }
+
+
+    public static void updateTargetAltitude(SFS.World.SelectableObject target)
+    {
+        // Retrieve planet (null if not a planet)
+        SFS.WorldBase.Planet planet = null;
+
+        SFS.World.Maps.MapPlanet targetMapPlanet = target as SFS.World.Maps.MapPlanet;
+        if (targetMapPlanet != null) planet = targetMapPlanet.planet;
+
+        // Update navigation data
+        if (planet == null)
+        {
+            // No planet selected - default and max are reset, but the planet name and the current altitude are intentionally kept
+            // so that they are available again if the player selects the same planet again later.
+            _NavVariables._defaultTargetAltitude = 0.0;
+            _NavVariables._maxTargetAltitude = 0.0;
+
+            if(_windowHolder != null) // avoids breaking the game when this function is called at start-up
+            {
+                double tmp_alt = _NavVariables._targetAltitude; // because setting _textInput_target_altitude.Text to "0.0" resets that variable...
+                _textInput_target_altitude.Text = "0.0";
+                _NavVariables._targetAltitude = tmp_alt;
+            }
+        }
+        else
+        {
+            // A planet is selected
+            _NavVariables._defaultTargetAltitude = planet.TimewarpRadius_Descend - planet.Radius;
+            _NavVariables._maxTargetAltitude = planet.SOI - planet.Radius;
+
+            if (planet.name != _NavVariables._currentPlanetName)
+            {
+                // The planet selected is different from before --> setting planet name and default altitude
+                _NavVariables._targetAltitude = _NavVariables._defaultTargetAltitude;
+                _NavVariables._currentPlanetName = planet.name;
+            }
+
+            if (_windowHolder != null) // avoids breaking the game when this function is called at start-up
+            {
+                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(_NavVariables._targetAltitude);
+            }
+        }
+    }
+
+
     // Nb. max turns input
     private static void onNbMaxTurnsChanged(string str)
     {
@@ -280,7 +393,14 @@ class ANAIS_Panel
     // increase/decrease Nb. max turns buttons
     private static void decreaseNbMaxTurns()
     {
-        _textInput_nb_max_turns.Text = ((int)(_settings._nbMaxTurns - 1)).ToString();
+        if(_settings._nbMaxTurns > 0)
+        {
+            _textInput_nb_max_turns.Text = ((int)(_settings._nbMaxTurns - 1)).ToString();
+        }
+        else
+        {
+            _textInput_nb_max_turns.Text = "0";
+        }
     }
 
     private static void increaseNbMaxTurns()

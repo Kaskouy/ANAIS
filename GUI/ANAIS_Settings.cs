@@ -68,6 +68,12 @@ public class NavigationVariables
 {
     public bool _approachLinesPreferredDatesNeedReset = false;
 
+    // target altitude related variables
+    public string _currentPlanetName = "";
+    public double _defaultTargetAltitude = 0.0;
+    public double _maxTargetAltitude = 0.0;
+    public double _targetAltitude = 0.0;
+
     public NavigationVariables()
     {
         Reset();
@@ -76,11 +82,13 @@ public class NavigationVariables
     public void Reset()
     {
         _approachLinesPreferredDatesNeedReset = false;
+        // _targetAltitude is not to be reset
     }
 
     public void Copy(NavigationVariables other)
     {
         _approachLinesPreferredDatesNeedReset = other._approachLinesPreferredDatesNeedReset;
+        _targetAltitude = other._targetAltitude;
     }
 }
 
