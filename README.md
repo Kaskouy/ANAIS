@@ -5,10 +5,11 @@
 
 ## Presentation
 
-ANAIS is a mod for SFS (Spaceflight Simulator) that replaces the game navigation system with a much more elaborated and versatile one.
+ANAIS is a mod for SFS (Spaceflight Simulator) that replaces the game navigation system with a much more elaborated one.
 
-Space navigation obeys to special rules. Objects in space usually travel at very high speeds, fuel is a scarce resource, and trajectories hard to predict. It makes the space rendez-vous a real but yet crucial challenge.  
-ANAIS helps you in that regard, and automatically calculates for you an optimized trajectory to perform your rendez-vous with minimal effort.
+Trajectories in space are hard to predict. Whether you aim for another planet or another craft, it's hard to figure a trajectory that leads you to your target without wasting tons of fuel. ANAIS automatically calculates the most efficient trajectory for you and tells you how to perform your burn maneuvers.
+
+ANAIS is suited for beginners to help them with basic maneuvers, but also provides a whole panel of options for experienced players to help them setting up complex trajectories involving advanced maneuvers like gravity assist.
 
 ## How does it work?
 
