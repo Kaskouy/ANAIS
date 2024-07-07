@@ -57,7 +57,7 @@ class ReturnToPlanetCalculator
     private const double MAX_RADIUS_FACTOR = 10000.0;
 
     // NEWTON_PRECISION_THRESHOLD: This is the precision threshold that will be applied when using the Newton method
-    private const double NEWTON_PRECISION_THRESHOLD = 0.000001;
+    private const double NEWTON_PRECISION_THRESHOLD = 0.00000001;
 
     private const double MAX_ECCENTRICITY_FINAL_ORBIT = 0.01;
 
@@ -692,6 +692,7 @@ class ReturnToPlanetCalculator
         int i_Newton = 0;
 
         double new_x = x_start;
+        double relativeDifference = Double.PositiveInfinity;
 
         do
         {
@@ -725,9 +726,15 @@ class ReturnToPlanetCalculator
                 }
             }
 
-        } while ((i_Newton < nb_max_iterations) && (Math.Abs(new_x - x) > NEWTON_PRECISION_THRESHOLD));
+            // Calculate relative difference
+            relativeDifference = Math.Abs(new_x - x);
 
-        if(Math.Abs(new_x - x) > NEWTON_PRECISION_THRESHOLD)
+            if (new_x > NEWTON_PRECISION_THRESHOLD) relativeDifference /= new_x;
+            else relativeDifference /= NEWTON_PRECISION_THRESHOLD;
+
+        } while ((i_Newton < nb_max_iterations) && (relativeDifference > NEWTON_PRECISION_THRESHOLD));
+
+        if(relativeDifference > NEWTON_PRECISION_THRESHOLD)
         {
             LOG(LOG_LEVEL.ERROR, "Problem with Newton method: too many iterations - Exit");
             return false;
