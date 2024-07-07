@@ -171,9 +171,6 @@ class AnaisManager
     private static double preferredTimeOfArrivalAtNode1;
     private static double preferredTimeOfArrivalAtNode2;
 
-    // This is to know if the ANAIS transfer calculations should be inhibited (for situations in which the approach lines are more appropriate)
-    private static bool allowANAIStransferCalculation = false;
-
     // GLOBAL CONSTANTS FOR THE CALCULATIONS
     // -------------------------------------
     public const double C_DELTAV_THRESHOLD_ENTER_ENCOUNTER_MODE = 2.5;
@@ -339,7 +336,7 @@ class AnaisManager
 
                     // All good, GO ANAIS!
                     //Stopwatch stopwatch_calculation = Stopwatch.StartNew();
-                    bool transferCalculated = anaisWorkingDataSet.CalculateTransfer(ref finalApproachMode, ref isOnEncounterTrajectory, ref encounterDate, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2, ref allowANAIStransferCalculation);
+                    bool transferCalculated = anaisWorkingDataSet.CalculateTransfer(ref finalApproachMode, ref isOnEncounterTrajectory, ref encounterDate, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2);
                     //stopwatch_calculation.Stop();
 
                     if (anaisManagerState.NeedsReset())
@@ -401,7 +398,6 @@ class AnaisManager
             encounterDate = double.NegativeInfinity;
             preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
             preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
-            allowANAIStransferCalculation = false;
         }
     }
     

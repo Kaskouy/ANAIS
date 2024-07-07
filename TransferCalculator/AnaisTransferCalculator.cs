@@ -116,25 +116,25 @@ class AnaisTransferCalculator
                 if (Math.Abs(deltaTimeA) < Math.Abs(deltaTimeB))
                 {
                     bestTimeOfPassageTarget = timeOfTargetPassageA;
-                    minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 4.0;
+                    minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 6.0;
                 }
                 else
                 {
                     bestTimeOfPassageTarget = timeOfTargetPassageB;
-                    minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 4.0;
+                    minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 6.0;
                 }
             }
             else if(timeOfPlayerPassageA > timeNow)
             {
                 // Passage of player at intersection B is in the past (if the orbit is hyperbolic, so it only happens once) --> search around passage at intersection A
                 bestTimeOfPassageTarget = getClosestPassageTimeAtArg(targetOrbit, timeOfPlayerPassageA, angleA);
-                minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 4.0;
+                minimumTransferDelay = (timeOfPlayerPassageA - timeNow) / 6.0;
             }
             else if(timeOfPlayerPassageB > timeNow)
             {
                 // Passage of player at intersection A is in the past (if the orbit is hyperbolic, so it only happens once) --> search around passage at intersection B
                 bestTimeOfPassageTarget = getClosestPassageTimeAtArg(targetOrbit, timeOfPlayerPassageB, angleB);
-                minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 4.0;
+                minimumTransferDelay = (timeOfPlayerPassageB - timeNow) / 6.0;
             }
             else
             {
@@ -175,7 +175,7 @@ class AnaisTransferCalculator
             LOG(LOG_LEVEL.DEBUG, "  Closest passage time of target at ref point = " + timeOfTargetPassageAtRefPoint + " (orbital period = " + targetOrbit.period + ")");
 
             // Calculate the minimal start time (to avoid excessively energetic transfers that are difficult to calculate and aren't viable anyway)
-            double minimal_start_time = timeNow + (hohmannTransfer.orbitEndTime - timeNow) / 4.0;
+            double minimal_start_time = timeNow + (hohmannTransfer.orbitEndTime - timeNow) / 6.0;
 
             // Compute a time range around the best time of passage
             return computeTimeRangeAroundTimeOfArrival(playerOrbit, targetOrbit, timeNow, timeOfTargetPassageAtRefPoint, playerArg, minimal_start_time, out startTime, out endTime);
@@ -377,56 +377,66 @@ class AnaisTransferCalculator
         if (needToRefineTransfer)
         {
             // First refine the 3 best transfers
-            // transfer 1
-            bool transferSuccessfullyRefined = anaisTransferList[i_dvMini - 1].refineTransferCalculation();
+            bool transferSuccessfullyRefined;
 
-            if(!transferSuccessfullyRefined)
+            for(int i = i_dvMini - 1; i <= i_dvMini + 1; i++)
             {
-                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
-                return null;
+                transferSuccessfullyRefined = anaisTransferList[i].refineTransferCalculation();
+
+                if (!transferSuccessfullyRefined)
+                {
+                    LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                    return null;
+                }
             }
 
             double deltaV_transfer1 = anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType);
-
-            // transfer 2
-            transferSuccessfullyRefined = anaisTransferList[i_dvMini].refineTransferCalculation();
-
-            if (!transferSuccessfullyRefined)
-            {
-                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
-                return null;
-            }
-
             double deltaV_transfer2 = anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType);
-
-            // transfer 3
-            transferSuccessfullyRefined = anaisTransferList[i_dvMini + 1].refineTransferCalculation();
-
-            if (!transferSuccessfullyRefined)
-            {
-                LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
-                return null;
-            }
-
             double deltaV_transfer3 = anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType);
 
-            while ((i_dvMini > 0) && (i_dvMini < anaisTransferList.Count - 1) &&                        // i_dvMini is in range (must have a predecessor and a successor)...
-                   ((deltaV_transfer1 < deltaV_transfer2) || (deltaV_transfer3 < deltaV_transfer2)))   // ... and deltaV_transfer2 is not the minimum value
+            LOG(LOG_LEVEL.DEBUG, "  Refined transfer at position " + (i_dvMini - 1) + ": deltaV = " + deltaV_transfer1);
+            LOG(LOG_LEVEL.DEBUG, "  Refined transfer at position " +  i_dvMini      + ": deltaV = " + deltaV_transfer2);
+            LOG(LOG_LEVEL.DEBUG, "  Refined transfer at position " + (i_dvMini + 1) + ": deltaV = " + deltaV_transfer3);
+
+            if ((deltaV_transfer1 < deltaV_transfer2) || (deltaV_transfer3 < deltaV_transfer2))
             {
-                // case when the third transfer is the cheapest
+                // transfer 2 is not the optimal transfer -> search optimal transfer over an extended range
+                int i_mini = i_dvMini - 1;
+                int i_maxi = i_dvMini + 1;
+                double deltaV_transfer_mini = deltaV_transfer1;
+                double deltaV_transfer_maxi = deltaV_transfer3;
+
+                // search better transfers prior to transfer 1 if it's better than transfer 2
+                if (deltaV_transfer1 < deltaV_transfer2)
+                {
+                    while(i_mini > 0)
+                    {
+                        // refine the previous transfer
+                        i_mini--;
+                        transferSuccessfullyRefined = anaisTransferList[i_mini].refineTransferCalculation();
+
+                        if (!transferSuccessfullyRefined)
+                        {
+                            LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
+                            return null;
+                        }
+
+                        // if this transfer is worse than the following one, stop there (we've passed the minimum)
+                        double currentDelta_V = deltaV_transfer_mini;
+                        deltaV_transfer_mini = anaisTransferList[i_mini].GetDeltaV_valueToMinimize(transferType);
+                        LOG(LOG_LEVEL.DEBUG, "  Refined transfer at position " + i_mini + ": deltaV = " + deltaV_transfer_mini);
+                        if (deltaV_transfer_mini > currentDelta_V) break;
+                    }
+                }
+
+                // search better transfers past transfer 3 if it's better than transfer 2
                 if (deltaV_transfer3 < deltaV_transfer2)
                 {
-                    // transfer 3 is the cheapest - evaluate the following one to bound the minimum
-                    i_dvMini++;
-
-                    if (i_dvMini < anaisTransferList.Count - 1)
+                    while (i_maxi < anaisTransferList.Count - 1)
                     {
-                        // shift all values
-                        deltaV_transfer1 = deltaV_transfer2;
-                        deltaV_transfer2 = deltaV_transfer3;
-
-                        // evaluate accurately the new "transfer 3" 
-                        transferSuccessfullyRefined = anaisTransferList[i_dvMini + 1].refineTransferCalculation();
+                        // refine the following transfer
+                        i_maxi++;
+                        transferSuccessfullyRefined = anaisTransferList[i_maxi].refineTransferCalculation();
 
                         if (!transferSuccessfullyRefined)
                         {
@@ -434,35 +444,37 @@ class AnaisTransferCalculator
                             return null;
                         }
 
-                        deltaV_transfer3 = anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType);
+                        // if this transfer is worse than the previous one, stop there (we've passed the minimum)
+                        double currentDelta_V = deltaV_transfer_maxi;
+                        deltaV_transfer_maxi = anaisTransferList[i_maxi].GetDeltaV_valueToMinimize(transferType);
+                        LOG(LOG_LEVEL.DEBUG, "  Refined transfer at position " + i_maxi + ": deltaV = " + deltaV_transfer_maxi);
+                        if (deltaV_transfer_maxi > currentDelta_V) break;
                     }
                 }
 
-                // case when the first transfer is the cheapest
-                else if (deltaV_transfer1 < deltaV_transfer2)
+                // Then search the new minimum within the defined range
+                dvMini = double.PositiveInfinity;
+                i_dvMini = i_mini;
+
+                for(int i = i_mini; i <= i_maxi; i++)
                 {
-                    // transfer 1 is the cheapest - evaluate the previous one to bound the minimum
-                    i_dvMini--;
-
-                    if(i_dvMini > 0)
+                    if(anaisTransferList[i].GetDeltaV_valueToMinimize(transferType) < dvMini)
                     {
-                        // shift all values
-                        deltaV_transfer3 = deltaV_transfer2;
-                        deltaV_transfer2 = deltaV_transfer1;
-
-                        // evaluate accurately the new "transfer 1" 
-                        transferSuccessfullyRefined = anaisTransferList[i_dvMini - 1].refineTransferCalculation();
-
-                        if (!transferSuccessfullyRefined)
-                        {
-                            LOG(LOG_LEVEL.DEBUG, "  Failed to refine interplanetary transfer calculation - Give up");
-                            return null;
-                        }
-
-                        deltaV_transfer1 = anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType);
+                        i_dvMini = i;
+                        dvMini = anaisTransferList[i].GetDeltaV_valueToMinimize(transferType);
                     }
                 }
-            } // end while i_dvMini in range and transfer 2 is not the minimal transfer
+
+                if ((i_dvMini == 0) || (i_dvMini == anaisTransferList.Count - 1))
+                {
+                    LOG(LOG_LEVEL.DEBUG, "  No local minimum found - Give up");
+                    return null; // No minimum located
+                }
+                else
+                {
+                    LOG(LOG_LEVEL.DEBUG, "  New minimum found at position " + i_dvMini + "; target ΔV = " + anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType));
+                }
+            }
         }
 
         // Search for a more accurate minimum around the located minimum
@@ -518,7 +530,7 @@ class AnaisTransferCalculator
             }
 
             // Check if the latest transfer found is good enough
-            const double C_MAX_DV_DIFFERENCE = 0.1;
+            const double C_MAX_DV_DIFFERENCE = 0.05;
             bool conditionOverSpeed = (minCalculator.getMaxYdifference() < C_MAX_DV_DIFFERENCE);
 
             double C_DELTA_TIME_TOLERANCE = targetOrbit.period / 3600.0; // 21600 = 360 * 60 : 1/21600 corresponds to one minute of angle on a circular orbit
@@ -548,6 +560,7 @@ class AnaisTransferCalculator
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
         LOG(LOG_LEVEL.DEBUG, "---   NEW ANAIS TRANSFER CALCULATION    ---");
         LOG(LOG_LEVEL.DEBUG, "-------------------------------------------");
+        LOG(LOG_LEVEL.DEBUG, "  timeNow = " + timeNow);
 
         // Deal with the return to mother planet case first
         if ((targetPlanet != null) && ((playerOrbit.Planet == targetPlanet) || (playerOrbit.Planet.parentBody == targetPlanet)))

@@ -112,7 +112,7 @@ public class AnaisDataSet
     // WARNING: This method is to be called by the separate ANAIS task
     //     --> No global unprotected data must be used in it!
     // ----------------------------------------------------------------
-    public bool CalculateTransfer(ref bool isCurrentlyInFinalApproachMode, ref bool iscurrentlyOnEncounterTrajectory, ref double encounterDate, ref double preferredTimeOfArrivalAtNode1, ref double preferredTimeOfArrivalAtNode2, ref bool ANAIScalculationAllowed)
+    public bool CalculateTransfer(ref bool isCurrentlyInFinalApproachMode, ref bool iscurrentlyOnEncounterTrajectory, ref double encounterDate, ref double preferredTimeOfArrivalAtNode1, ref double preferredTimeOfArrivalAtNode2)
     {
         // If no input data, leave.
         if (!_hasInputData) return false;
@@ -241,7 +241,6 @@ public class AnaisDataSet
             // Search the first orbit that can potentially lead to an encounter with target (this orbit and the target's one must have the same parent body)
             // We search it that way in case some unexpected bodies went in our way, so that we don't consider them (example: we target Venus, we're on a transfer from Earth to Venus, but the Moon comes on our path - this allows to ignore the Moon)
             int i_firstCompatibleTransfer = 0;
-            bool gravityAssistDetected = false;
 
             while (i_firstCompatibleTransfer < _listPlayerOrbits.Count)
             {
@@ -266,28 +265,14 @@ public class AnaisDataSet
                         _entryInTargetSOIdetected = true;
                         break; // we have all we wanted to know
                     }
-                    else
-                    {
-                        // An entry into a SOI that's not the target's one has been detected
-                        gravityAssistDetected = true; // Especially, no previous encounter with the target occured - we would have breaked otherwise
-                    }
                 }
             }
-
-            // If ANAIS calculation was restricted, we only maintain the restriction if another body is on our way
-            // We suppose it's the player's intention to use that body as a gravity assist opportunity, so calculating the ANAIS transfer would disturb him.
-            //if(!ANAIScalculationAllowed && !gravityAssistDetected) ANAIScalculationAllowed = true;
-            ANAIScalculationAllowed = true; // Forced to true since the player now has the control over this through the control panel
-        }
-        else
-        {
-            if (!_finalApproachMode) ANAIScalculationAllowed = true; // ANAIS is allowed to run in any other situation (except in final approach mode)
         }
 
 
         // CHECK IF WE ARE ON ENCOUNTER MODE (Player is practically on an encounter trajectory)
         // ---------------------------------
-        if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && ANAIScalculationAllowed && _settings._showTransfer)
+        if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && _settings._showTransfer)
         {
             // calculate the transfer for the memorized encounter date
             _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet, targetAltitude, _settings._transferType);
@@ -310,7 +295,7 @@ public class AnaisDataSet
 
         // CALCULATE ANAIS TRANSFER (if not in final approach / on encounter trajectory mode, and if the configurations is compatible with ANAIS)
         // ------------------------
-        if (!_finalApproachMode && !iscurrentlyOnEncounterTrajectory && (isRendezVousTrajectory || isReturnToMotherPlanet) && ANAIScalculationAllowed && _settings._showTransfer)
+        if (!_finalApproachMode && !iscurrentlyOnEncounterTrajectory && (isRendezVousTrajectory || isReturnToMotherPlanet) && _settings._showTransfer)
         {
             // Calculate the ANAIS transfer
             _anaisTransfer = AnaisTransferCalculator.calculateTransferToTarget(playerOrbit, targetOrbit, _targetPlanet, targetAltitude, _timeNow, _settings._transferType, timeWarpFactor);

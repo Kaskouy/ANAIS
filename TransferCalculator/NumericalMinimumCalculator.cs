@@ -31,7 +31,7 @@ class NumericalMinimumCalculator
         {
             theCalculator.nbStep = 1;
 
-            LOG(LOG_LEVEL.DEBUG, " NumericalMinimumCalculator: Step "+ theCalculator.nbStep + " - List of points is:");
+            LOG(LOG_LEVEL.DEBUG, "NumericalMinimumCalculator: Step "+ theCalculator.nbStep + " - List of points is:");
             LOG(LOG_LEVEL.DEBUG, "    x1 = " + x1 + " ; y1 = " + y1);
             LOG(LOG_LEVEL.DEBUG, "    x2 = " + x2 + " ; y2 = " + y2);
             LOG(LOG_LEVEL.DEBUG, "    x3 = " + x3 + " ; y3 = " + y3);
