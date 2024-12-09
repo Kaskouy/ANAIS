@@ -123,8 +123,10 @@ public class AnaisDataSet
             return false;
         }
 
+        LogAnaisDataSetInputData(LOG_LEVEL.INFO);
+
         // Reset preferred times of arrival at nodes if that was asked (if player changed the number of turns through the control panel)
-        if(_NavVariables._approachLinesPreferredDatesNeedReset)
+        if (_NavVariables._approachLinesPreferredDatesNeedReset)
         {
             preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
             preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
@@ -151,42 +153,75 @@ public class AnaisDataSet
             // Retrieve target orbit if exists (it won't exist if the targeted body is the main body - aka the Sun)
             if (_listTarget.Count > 0) targetOrbit = _listTarget[0];
 
-            LOG(LOG_LEVEL.DEBUG, "  Transfer configuration: return to parent planet (local transfer)");
+            LOG(LOG_LEVEL.INFO, "  Transfer configuration: return to parent planet (local transfer)");
         }
         else if ((_targetPlanet != null) && (playerOrbit.Planet.parentBody == _targetPlanet))
         {
-            // Return to mother planet through interplanetary transfer
-            isReturnToMotherPlanet = true;
-            isInterplanetaryTransfer = true;
+            if(!playerOrbit.Planet.orbit.isFixed())
+            {
+                // Return to mother planet through interplanetary transfer
+                isReturnToMotherPlanet = true;
+                isInterplanetaryTransfer = true;
 
-            // Retrieve target orbit if exists (it won't exist if the targeted body is the main body - aka the Sun)
-            if (_listTarget.Count > 0) targetOrbit = _listTarget[0];
+                // Retrieve target orbit if exists (it won't exist if the targeted body is the main body - aka the Sun)
+                if (_listTarget.Count > 0) targetOrbit = _listTarget[0];
 
-            LOG(LOG_LEVEL.DEBUG, "  Transfer configuration: return to parent planet (interplanetary transfer)");
+                LOG(LOG_LEVEL.INFO, "  Transfer configuration: return to parent planet (interplanetary transfer)");
+            }
+            else
+            {
+                // Not managed situation
+                LOG(LOG_LEVEL.INFO, "  Transfer configuration: origin planet is artificially fixed -> Not managed");
+                return false;
+            }
         }
         else if (_listTarget.Count > 0)
         {
             // Not a return to mother planet configuration --> Check if it's a rendez-vous trajectory 
             targetOrbit = _listTarget[0];
-            
-            if (playerOrbit.Planet == targetOrbit.Planet) isLocalTransfer = true;
-            else if (playerOrbit.Planet.parentBody == targetOrbit.Planet) isInterplanetaryTransfer = true;
+
+            if (playerOrbit.Planet == targetOrbit.Planet)
+            {
+                if (!targetOrbit.isFixed())
+                {
+                    isLocalTransfer = true;
+                }
+                else
+                {
+                    // Not managed situation
+                    LOG(LOG_LEVEL.INFO, "  Transfer configuration: target is artificially fixed -> Not managed");
+                    return false;
+                }
+            }
+            else if (playerOrbit.Planet.parentBody == targetOrbit.Planet)
+            {
+                if(!targetOrbit.isFixed() && !playerOrbit.Planet.orbit.isFixed())
+                {
+                    isInterplanetaryTransfer = true;
+                }
+                else
+                {
+                    // Not managed situation
+                    LOG(LOG_LEVEL.INFO, "  Transfer configuration: either origin planet or target is artificially fixed -> Not managed");
+                    return false;
+                }
+            }
             
             isRendezVousTrajectory = isLocalTransfer || isInterplanetaryTransfer;
 
             if (isLocalTransfer || isInterplanetaryTransfer)
             {
-                LOG(LOG_LEVEL.DEBUG, "  Transfer configuration: Rendez-vous; Type: " + (isLocalTransfer ? "Local" : "Interplanetary") );
+                LOG(LOG_LEVEL.INFO, "  Transfer configuration: Rendez-vous; Type: " + (isLocalTransfer ? "Local" : "Interplanetary") );
             }
             else
             {
-                LOG(LOG_LEVEL.DEBUG, "  Transfer configuration: Degraded (ANAIS can't be used)");
+                LOG(LOG_LEVEL.INFO, "  Transfer configuration: Degraded (ANAIS can't be used)");
             }
         }
         else
         {
             // Not managed situation
-            LOG(LOG_LEVEL.DEBUG, "  Transfer configuration: Not managed");
+            LOG(LOG_LEVEL.INFO, "  Transfer configuration: Not managed");
             return false;
         }
         
@@ -275,6 +310,7 @@ public class AnaisDataSet
         if (!_finalApproachMode && isRendezVousTrajectory && iscurrentlyOnEncounterTrajectory && (encounterDate < targetOrbit.orbitEndTime) && _settings._showTransfer)
         {
             // calculate the transfer for the memorized encounter date
+            LOG(LOG_LEVEL.INFO, "On Encounter trajectory mode: calculate transfer between startTime = " + _timeNow + " and endTime = " + encounterDate);
             _anaisTransfer = new AnaisTransfer(playerOrbit, targetOrbit, _targetPlanet, targetAltitude, _settings._transferType);
             _anaisTransfer.calculateTransfer(_timeNow, encounterDate);
 
@@ -366,6 +402,12 @@ public class AnaisDataSet
                         if (!isHandledByANAIS || !iscurrentlyOnEncounterTrajectory)
                         {
                             ClosestApproachCalculator.CalculateClosestApproach_MultiTurn(_listPlayerOrbits[i_playerOrbit], targetOrbit, _approachData_singleTurn, Math.Max(_timeNow, _listPlayerOrbits[i_playerOrbit].orbitStartTime), out _approachData_multiTurn, out _nbTurns, ref preferredTimeOfArrivalAtNode1, ref preferredTimeOfArrivalAtNode2, _settings._nbMaxTurns, _settings._preferredNode);
+
+                            // if calculation successful, invalidate closest approach on single turn (we want on a single approach line)
+                            if (_approachData_multiTurn.validity)
+                            {
+                                _approachData_singleTurn.validity = false; 
+                            }
                         }
 
                         break;
@@ -378,6 +420,7 @@ public class AnaisDataSet
         if (_approachData_multiTurn.validity == false)
         {
             preferredTimeOfArrivalAtNode1 = double.NegativeInfinity;
+            preferredTimeOfArrivalAtNode2 = double.NegativeInfinity;
             _nbTurns = 0;
         }
 
@@ -583,16 +626,19 @@ public class AnaisDataSet
     //   encounter found over the next 60 seconds)
     // - startingVelocity will be the burn vector if a transfer is
     //   planned (only if isInFinalApproachMode is false)
+    // - evaluationTime is the time (ingame) at which the sityation was
+    //   evaluated; always valid
     // - entrySOIdetected indicates if the ship is on a trajectory that
     //   makes it enter the targetted SOI - always valid; will be false
     //   if the target is another ship (because no SOI...)
-    public bool getVelocityArrowData(out bool isInFinalApproachMode, out ClosestApproachCalculator.T_ApproachData approachData, out Double2 startingVelocity, out bool entrySOIdetected)
+    public bool getVelocityArrowData(out bool isInFinalApproachMode, out ClosestApproachCalculator.T_ApproachData approachData, out Double2 startingVelocity, out double evaluationTime, out bool entrySOIdetected)
     {
         startingVelocity = new Double2();
         approachData = new ClosestApproachCalculator.T_ApproachData();
         approachData.validity = false;
         isInFinalApproachMode = _finalApproachMode;
         entrySOIdetected = _entryInTargetSOIdetected;
+        evaluationTime = _timeNow;
 
         if (_finalApproachMode)
         {
@@ -614,6 +660,7 @@ public class AnaisDataSet
             {
                 startingVelocity.x = _anaisTransfer.GetDeltaV_start().x;
                 startingVelocity.y = _anaisTransfer.GetDeltaV_start().y;
+                LOG(LOG_LEVEL.DEBUG, "  getVelocityArrowData : Vx = " + startingVelocity.x + "; Vy = " + startingVelocity.y + "; heading = " + Math.Atan2(startingVelocity.y, startingVelocity.x));
                 return true;
             }
         }
@@ -669,6 +716,64 @@ public class AnaisDataSet
     private static void LOG(LOG_LEVEL level, string message)
     {
         AnaisLogger.Log(LOG_CATEGORY.ANAIS_DATA_SET, level, message);
+    }
+
+    [Conditional("ACTIVE_LOGS")]
+    private void LogAnaisDataSetInputData(LOG_LEVEL logLevel)
+    {
+        LOG(logLevel, "  NEW ANAIS DATA SET INPUT");
+        LOG(logLevel, "  ------------------------");
+        LOG(logLevel, "    _timeNow = " + _timeNow);
+
+        if(_listPlayerOrbits.Count > 0) 
+        {
+            Location playerLocation = _listPlayerOrbits[0].GetLocation(_timeNow);
+            if(playerLocation != null) 
+            {
+                LOG(logLevel, "    playerLocation.x  = " + playerLocation.position.x);
+                LOG(logLevel, "    playerLocation.y  = " + playerLocation.position.y);
+                LOG(logLevel, "    playerLocation.vx = " + playerLocation.velocity.x);
+                LOG(logLevel, "    playerLocation.vy = " + playerLocation.velocity.y);
+            }
+            else
+            {
+                LOG(logLevel, "    WARNING! Player location could not be determined");
+            }
+        }
+        else
+        {
+            LOG(logLevel, "    WARNING! No player orbit is registered");
+        }
+
+        if (_listTarget.Count > 0)
+        {
+            Location targetLocation = _listTarget[0].GetLocation(_timeNow);
+            if (targetLocation != null)
+            {
+                LOG(logLevel, "    targetLocation.x  = " + targetLocation.position.x);
+                LOG(logLevel, "    targetLocation.y  = " + targetLocation.position.y);
+                LOG(logLevel, "    targetLocation.vx = " + targetLocation.velocity.x);
+                LOG(logLevel, "    targetLocation.vy = " + targetLocation.velocity.y);
+            }
+            else
+            {
+                LOG(logLevel, "    WARNING! Target location could not be determined");
+            }
+        }
+        else
+        {
+            LOG(logLevel, "    WARNING! No target orbit is registered");
+        }
+
+        if(_targetPlanet == null)
+        {
+            LOG(logLevel, "    No planet selected");
+        }
+        else
+        {
+            LOG(logLevel, "    Target is a planet: " + _targetPlanet.name);
+        }
+        LOG(logLevel, "  ------------------------");
     }
 }
 

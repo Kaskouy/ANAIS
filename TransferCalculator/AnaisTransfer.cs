@@ -295,13 +295,16 @@ class AnaisTransfer
 
         if (transferOrbit != null)
         {
+            LOG(LOG_LEVEL.DEBUG, "transferOrbit: slr = " + transferOrbit.slr + "; ecc = " + transferOrbit.ecc + "; sma = " + transferOrbit.sma);
+            LOG(LOG_LEVEL.DEBUG, "transferOrbit: phi = " + transferOrbit.arg + "; Tp = " + transferOrbit.periapsisPassageTime);
+
             // Get starting and ending locations on the transfer orbits
             Location startTransferLocation = transferOrbit.GetLocation(departureTime);
             Location endTransferLocation = transferOrbit.GetLocation(arrivalTime);
 
             // Calculate deltaV and transfer efficiency at start
             calculateDeltaVandTransferEfficiency(playerLocation.velocity, startTransferLocation.velocity, out deltaV_start, out dv_start, out double start_transfer_eff);
-
+            
             // Calculate deltaV and transfer efficiency at arrival
             calculateDeltaVandTransferEfficiency(endTransferLocation.velocity, targetLocation.velocity, out Double2 deltaV_end_main, out double dv_end_main, out double end_main_transfer_eff);
 

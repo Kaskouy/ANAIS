@@ -8,6 +8,7 @@ using System.Diagnostics;
 using SFS.World;
 using SFS.WorldBase;
 using SFS.World.Maps;
+using UnityEngine;
 
 class AnaisTransferCalculator
 {
@@ -479,11 +480,11 @@ class AnaisTransferCalculator
 
         // Search for a more accurate minimum around the located minimum
         // -------------------------------------------------------------
-        NumericalMinimumCalculator minCalculator = NumericalMinimumCalculator.createInstance(anaisTransferList[i_dvMini - 1].arrivalTime, anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType),
-                                                                                             anaisTransferList[i_dvMini].arrivalTime    , anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType),
-                                                                                             anaisTransferList[i_dvMini + 1].arrivalTime, anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType));
+        NumericalMinimumCalculator<Double2> minCalculator = NumericalMinimumCalculator<Double2>.createInstance(anaisTransferList[i_dvMini - 1].arrivalTime, anaisTransferList[i_dvMini - 1].GetDeltaV_valueToMinimize(transferType), anaisTransferList[i_dvMini - 1].GetDeltaV_start(),
+                                                                                                               anaisTransferList[i_dvMini].arrivalTime    , anaisTransferList[i_dvMini].GetDeltaV_valueToMinimize(transferType), anaisTransferList[i_dvMini].GetDeltaV_start(),
+                                                                                                               anaisTransferList[i_dvMini + 1].arrivalTime, anaisTransferList[i_dvMini + 1].GetDeltaV_valueToMinimize(transferType), anaisTransferList[i_dvMini + 1].GetDeltaV_start()); 
 
-        if(minCalculator == null)
+        if (minCalculator == null)
         {
             LOG(LOG_LEVEL.ERROR, "  Minimum calculator could not be instantiated - no transfer returned");
             return null;
@@ -521,7 +522,7 @@ class AnaisTransferCalculator
             if (anaisTransfer.GetDeltaV_valueToMinimize(transferType) < bestAnaisTransfer.GetDeltaV_valueToMinimize(transferType)) bestAnaisTransfer = anaisTransfer;
 
             // Insert appropriately the new transfer in the calculator data
-            bool isOK = minCalculator.insertNewPoint(anaisTransfer.arrivalTime, anaisTransfer.GetDeltaV_valueToMinimize(transferType));
+            bool isOK = minCalculator.insertNewPoint(anaisTransfer.arrivalTime, anaisTransfer.GetDeltaV_valueToMinimize(transferType), anaisTransfer.GetDeltaV_start());
 
             if (!isOK)
             {
@@ -533,16 +534,48 @@ class AnaisTransferCalculator
             const double C_MAX_DV_DIFFERENCE = 0.05;
             bool conditionOverSpeed = (minCalculator.getMaxYdifference() < C_MAX_DV_DIFFERENCE);
 
-            double C_DELTA_TIME_TOLERANCE = targetOrbit.period / 3600.0; // 21600 = 360 * 60 : 1/21600 corresponds to one minute of angle on a circular orbit
+            double C_DELTA_TIME_TOLERANCE = targetOrbit.period / 7200.0; // 21600 = 360 * 60 : 1/21600 corresponds to one minute of angle on a circular orbit
             bool conditionOverTime = (minCalculator.getXwidth() < C_DELTA_TIME_TOLERANCE);
 
-            getOutNow = (conditionOverSpeed || conditionOverTime); 
+            Double2 v1, v2, v3;
+            double C_HEADING_TOLERANCE = Math.PI / 180.0 * 2.0; // 2 degrees (expressed in radians)
+            minCalculator.getAdditionalData(out v1, out v2, out v3); // Retrieve the deltaV starts associated to transfers
+            bool conditionOverHeading = false;
+            double diff_heading = 0.0;
+
+            if (v2.sqrMagnitude < 0.01)
+            {
+                // Not significant
+                LOG(LOG_LEVEL.DEBUG, "  DeltaV_start < 0.1 m/s  =>  heading condition ok");
+                conditionOverHeading = true;
+            }
+            else
+            {
+                diff_heading = v3.AngleRadians - v1.AngleRadians;
+                if (diff_heading < -Math.PI) diff_heading += 2.0 * Math.PI;
+                if (diff_heading >  Math.PI) diff_heading -= 2.0 * Math.PI;
+
+                if(Math.Abs(diff_heading) < C_HEADING_TOLERANCE)
+                {
+                    LOG(LOG_LEVEL.DEBUG, "  Heading difference = " + diff_heading + " radians  =>  heading condition ok");
+                    conditionOverHeading = true;
+                }
+                else
+                {
+                    LOG(LOG_LEVEL.DEBUG, "  Heading difference = " + diff_heading + " radians  =>  heading condition nok");
+                    conditionOverHeading = false;
+                }
+            }
+
+            LOG(LOG_LEVEL.DEBUG, "  ConditionOverSpeed = " + conditionOverSpeed + " (max DV difference = " + minCalculator.getMaxYdifference() + "m/s); conditionOverTime = " + conditionOverTime + "; conditionOverHeading = " + conditionOverHeading + "; Accurate calculation = " + minCalculator.isLastCalculationAccurate());
+
+            getOutNow = (conditionOverSpeed || conditionOverTime) && conditionOverHeading; 
 
         } while ((nbIterations < 50) && !getOutNow);
 
         if (getOutNow)
         {
-            LOG(LOG_LEVEL.DEBUG, "  Calculation SUCCESSFUL (" + nbIterations + " iterations) - return found transfer");
+            LOG(LOG_LEVEL.INFO, "  Calculation SUCCESSFUL (" + nbIterations + " iterations) - return found transfer");
             return bestAnaisTransfer;
         }
         else

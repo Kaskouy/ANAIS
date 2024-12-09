@@ -250,11 +250,11 @@ class AnaisManager
         }
     }
 
-    public static bool getVelocityArrowData(out bool isInFinalApproachMode, out ClosestApproachCalculator.T_ApproachData approachData, out Double2 startingVelocity, out bool entrySOIdetected)
+    public static bool getVelocityArrowData(out bool isInFinalApproachMode, out ClosestApproachCalculator.T_ApproachData approachData, out Double2 startingVelocity, out double evaluationTime, out bool entrySOIdetected)
     {
         lock (AnaisOutputDataLock)
         {
-            return anaisOutputDataSet.getVelocityArrowData(out isInFinalApproachMode, out approachData, out startingVelocity, out entrySOIdetected);
+            return anaisOutputDataSet.getVelocityArrowData(out isInFinalApproachMode, out approachData, out startingVelocity, out evaluationTime, out entrySOIdetected);
         }
     }
 

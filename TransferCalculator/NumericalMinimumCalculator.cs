@@ -7,7 +7,7 @@ using System.Diagnostics;
 
 using HarmonyLib;
 
-class NumericalMinimumCalculator
+class NumericalMinimumCalculator<T>
 {
     // Internal data
     // -------------
@@ -17,21 +17,24 @@ class NumericalMinimumCalculator
     private double x2, y2;
     private double x3, y3;
 
+    // This is additional data associated to the points to allow the caller to store more data
+    private T a1;
+    private T a2;
+    private T a3;
+
     private bool isLastCalculationAccurate_ = false;
 
     private uint nbStep = 0;
 
 
     // Returns an instance of NumericalMinimumCalculator if data is correct, null otherwise.
-    public static NumericalMinimumCalculator createInstance(double x1, double y1, double x2, double y2, double x3, double y3)
+    public static NumericalMinimumCalculator<T> createInstance(double x1, double y1, T data1, double x2, double y2, T data2, double x3, double y3, T data3)
     {
-        NumericalMinimumCalculator theCalculator = new NumericalMinimumCalculator(x1, y1, x2, y2, x3, y3);
+        NumericalMinimumCalculator<T> theCalculator = new NumericalMinimumCalculator<T>(x1, y1, data1, x2, y2, data2, x3, y3, data3);
 
         if (theCalculator.checkDataConsistency())
         {
-            theCalculator.nbStep = 1;
-
-            LOG(LOG_LEVEL.DEBUG, "NumericalMinimumCalculator: Step "+ theCalculator.nbStep + " - List of points is:");
+            LOG(LOG_LEVEL.DEBUG, "NumericalMinimumCalculator: Initialization - List of points is:");
             LOG(LOG_LEVEL.DEBUG, "    x1 = " + x1 + " ; y1 = " + y1);
             LOG(LOG_LEVEL.DEBUG, "    x2 = " + x2 + " ; y2 = " + y2);
             LOG(LOG_LEVEL.DEBUG, "    x3 = " + x3 + " ; y3 = " + y3);
@@ -59,16 +62,26 @@ class NumericalMinimumCalculator
         return Math.Max(y1, y3) - y2;
     }
 
+    public void getAdditionalData(out T data1, out T data2, out T data3)
+    {
+        data1 = a1;
+        data2 = a2;
+        data3 = a3;
+    }
+
 
     // Constructor: Initializes the algorithm with 3 points
-    private NumericalMinimumCalculator(double x1, double y1, double x2, double y2, double x3, double y3)
+    private NumericalMinimumCalculator(double x1, double y1, T a1, double x2, double y2, T a2, double x3, double y3, T a3)
     {
         this.x1 = x1;
         this.y1 = y1;
+        this.a1 = a1;
         this.x2 = x2;
         this.y2 = y2;
+        this.a2 = a2;
         this.x3 = x3;
         this.y3 = y3;
+        this.a3 = a3;
     }
 
     // Checks that the points verify the required conditions for the algorithm to work
@@ -92,7 +105,7 @@ class NumericalMinimumCalculator
 
 
     // Inserts a new point (x, y) at the appropriate place. Returns false if the operation failed (point is out of bounds)
-    public bool insertNewPoint(double x, double y)
+    public bool insertNewPoint(double x, double y, T data)
     {
         if((x < x1) || (x > x3))
         {
@@ -110,14 +123,17 @@ class NumericalMinimumCalculator
                 // list of points evolves like this: [1, 2, 3] -> [1, new, 2]
                 x3 = x2;
                 y3 = y2;
+                a3 = a2;
                 x2 = x;
                 y2 = y;
+                a2 = data;
             }
             else
             {
                 // list of points evolves like this: [1, 2, 3] -> [new, 2, 3]
                 x1 = x;
                 y1 = y;
+                a1 = data;
             }
         }
         else // x > x2
@@ -127,14 +143,17 @@ class NumericalMinimumCalculator
                 // list of points evolves like this: [1, 2, 3] -> [2, new, 3]
                 x1 = x2;
                 y1 = y2;
+                a1 = a2;
                 x2 = x;
                 y2 = y;
+                a2 = data;
             }
             else
             {
                 // list of points evolves like this: [1, 2, 3] -> [1, 2, new]
                 x3 = x;
                 y3 = y;
+                a3 = data;
             }
         }
 
