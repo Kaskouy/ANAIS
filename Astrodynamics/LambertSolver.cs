@@ -2,6 +2,7 @@
 using SFS.WorldBase;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -182,8 +183,9 @@ public static class LambertSolver
 
         } while ((relative_precision > C_PRECISION_THRESHOLD) && (iteration_number < C_NB_MAX_ITERATIONS));
 
-        
-		// Extract the orbitals parameters
+        LOG(LOG_LEVEL.DEBUG, "Found solution x = " + x + "; relative_precision = " + relative_precision);
+
+        // Extract the orbitals parameters
         // -------------------------------
         bool periapsisPassageTimeValid = ComputeOrbitParameters(x, out specificEnergy, out slr, out ecc, out argOfPeriapsis, out periapsisPassageTime);
 
@@ -433,6 +435,13 @@ public static class LambertSolver
         }
 
         return periapsisPassageTimeValid;
+    }
+
+    // Local log function
+    [Conditional("ACTIVE_LOGS")]
+    private static void LOG(LOG_LEVEL level, string message)
+    {
+        AnaisLogger.Log(LOG_CATEGORY.LAMBERT_SOLVER, level, message);
     }
 
 }
