@@ -7,6 +7,7 @@ using SFS.World.Maps;
 using UnityEngine;
 using UnityEngine.UI;
 using System.Diagnostics;
+using static UnityEngine.GraphicsBuffer;
 
 
 
@@ -21,6 +22,7 @@ public class MapNavigation_SetTarget_Patch
 		AnaisLogger.Log(LOG_CATEGORY.MAP_NAVIGATION, LOG_LEVEL.INFO, "SetTarget: Detected target set to a new object - Target exists: " + ((__instance.target != null) ? "yes":"no"));
 		AnaisManager.notifyNewTarget(__instance.target);
 		ANAIS_Panel.updateTargetAltitude(__instance.target);
+		VelocityArrowDrawer_OnLocationChange_Patch.notifyNewTarget(__instance.target);
     }
 }
 

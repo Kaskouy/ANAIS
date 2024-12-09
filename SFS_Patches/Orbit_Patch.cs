@@ -230,7 +230,8 @@ public class Orbit_OrbitConstructor2_Patch
 			}
 
 			// Use a valid direction parameter in any case
-			int dir = (direction > 0)?1:-1;
+			int dir = 0;
+			if(direction != 0) { dir = (direction > 0) ? 1 : -1; }
 
 			//LOG(LOG_LEVEL.DEBUG, "Setting location_out");
 			Traverse.Create(__instance).Field("location_Out").SetValue(new Location(planet, Double2.zero, Double2.zero));
@@ -320,18 +321,26 @@ public class Orbit_GetVelocityAtTrueAnomaly_Patch
 	[HarmonyPostfix]
 	public static void GetVelocityAtTrueAnomaly_Postfix(ref Double2 __result, Orbit __instance, ref Location ___location_Out, double trueAnomaly)
     {
-        double normalizedTrueAnomaly = Orbit_Utils.NormalizeAngle(trueAnomaly);
-		double radiusAtTrueAnomaly = Kepler.GetRadiusAtTrueAnomaly(__instance.slr, __instance.ecc, normalizedTrueAnomaly);
-		
-		double V_theta = __instance.getAngularMomentum() / radiusAtTrueAnomaly;
-		double V2 = 2.0 * (__instance.getSpecificEnergy() + ___location_Out.planet.mass / radiusAtTrueAnomaly);
-		double V_r2 = Math.Max(V2 - V_theta * V_theta, 0.0);
-		double V_r = Math.Sqrt(V_r2);
-		if (Math.Sign(normalizedTrueAnomaly) != __instance.direction) { V_r = -V_r; }
+        if(__instance.direction == 0)
+		{
+            // Fixed object
+			__result = new Double2(0.0, 0.0);
+        }
+		else
+		{
+            double normalizedTrueAnomaly = Orbit_Utils.NormalizeAngle(trueAnomaly);
+            double radiusAtTrueAnomaly = Kepler.GetRadiusAtTrueAnomaly(__instance.slr, __instance.ecc, normalizedTrueAnomaly);
 
-		Double2 velocity = new Double2(V_r, V_theta);
-		velocity = velocity.Rotate(normalizedTrueAnomaly + __instance.arg);
-		__result = velocity;
+            double V_theta = __instance.getAngularMomentum() / radiusAtTrueAnomaly;
+            double V2 = 2.0 * (__instance.getSpecificEnergy() + ___location_Out.planet.mass / radiusAtTrueAnomaly);
+            double V_r2 = Math.Max(V2 - V_theta * V_theta, 0.0);
+            double V_r = Math.Sqrt(V_r2);
+            if (Math.Sign(normalizedTrueAnomaly) != __instance.direction) { V_r = -V_r; }
+
+            Double2 velocity = new Double2(V_r, V_theta);
+            velocity = velocity.Rotate(normalizedTrueAnomaly + __instance.arg);
+            __result = velocity;
+        }
     }
 }
 
@@ -348,7 +357,13 @@ public class Orbit_GetLastTrueAnomalyPassTime_Patch
 	[HarmonyPostfix]
 	public static double GetLastTrueAnomalyPassTime_Postfix(double __result, Orbit __instance, double time, double trueAnomaly)
     {
-        double timeFromPeri = 0.0;
+        // Artificially fixed objects case
+		if(__instance.direction == 0)
+		{
+			return __instance.periapsisPassageTime;
+        }
+		
+		double timeFromPeri = 0.0;
 		double radius = __instance.slr / (1.0 + __instance.ecc * Math.Cos(trueAnomaly));
 		new KeplerSolver(__instance.Planet.mass, __instance.periapsis, __instance.getSpecificEnergy()).GetTimeAtPosition(radius, trueAnomaly, ref timeFromPeri);
 
@@ -383,10 +398,15 @@ public class Orbit_UpdateLocation_Patch
     {
         if (___location_Out.time != newTime)
 		{
-            double radius = 0.0;
+            // default values - meant to be used for artificially fixed objects
+			double radius = __instance.periapsis;
 			double trueAnomaly = 0.0;
 
-            new KeplerSolver(___location_Out.planet.mass, __instance.periapsis, __instance.getSpecificEnergy()).GetPositionAtTime((newTime - __instance.periapsisPassageTime) * (double)(__instance.direction), ref radius, ref trueAnomaly);
+			if(__instance.direction != 0)
+			{
+                new KeplerSolver(___location_Out.planet.mass, __instance.periapsis, __instance.getSpecificEnergy()).GetPositionAtTime((newTime - __instance.periapsisPassageTime) * (double)(__instance.direction), ref radius, ref trueAnomaly);
+            }
+            
 			double argument = trueAnomaly + __instance.arg;
 
             // Calculate position
@@ -470,7 +490,18 @@ public class Orbit_GetPoints_Patch
 	[HarmonyPostfix]
 	public static Vector3[] GetPoints_Postfix(Vector3[] __result, Orbit __instance, double fromTrueAnomaly, double toTrueAnomaly, int resolution, double scaleMultiplier)
     {
-        return new OrbitDrawer(__instance).GetPoints(fromTrueAnomaly, toTrueAnomaly, resolution, scaleMultiplier);
+        if(__instance.direction != 0)
+		{
+            // General case
+			return new OrbitDrawer(__instance).GetPoints(fromTrueAnomaly, toTrueAnomaly, resolution, scaleMultiplier);
+        }
+		else
+		{
+            // Artificially fixed object -> return a single point list
+            Vector3[] result = new Vector3[1];
+			result[0] = Kepler.GetPosition(__instance.periapsis, 0.0, __instance.arg) * scaleMultiplier;
+			return result;
+        }
 	}
 }
 

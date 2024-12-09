@@ -45,6 +45,10 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 	private static double  _timeBeforeClosestApproach; // only valid in the following navigation modes: FINAL_APPROACH, IMMINENT_ENCOUNTER, IMMINENT_IMPACT
 	private static bool _entrySOIdetected; // valid in all navigation modes but default
 
+	private static double _lastEvaluationTime = 0.0;
+	//private static DataSmoother _dataSmoother = new DataSmoother(25, 1.0, 4.0, 0.8);
+    private static DataSmoother _dataSmoother = new DataSmoother(8, 1.0, 4.0, 0.8);
+
     // colors
     private static Color _defaultArrowColor = new Color(1.0f, 1.0f, 1.0f, 0.9019608f);
 
@@ -78,6 +82,11 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 		}
 	}
 
+	public static void notifyNewTarget(SelectableObject target)
+	{
+		_dataSmoother.Clear();
+    }
+
 	// FUNCTIONS TO EVALUATE THE NAVIGATION MODE
 	// -----------------------------------------
 	private static void evaluateNavigationState()
@@ -100,7 +109,7 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 			// ----
 
             // Retrieve output data
-            bool hasData = AnaisManager.getVelocityArrowData(out bool finalApproach, out ClosestApproachCalculator.T_ApproachData approachData, out _relativeVelocity, out _entrySOIdetected);
+            bool hasData = AnaisManager.getVelocityArrowData(out bool finalApproach, out ClosestApproachCalculator.T_ApproachData approachData, out _relativeVelocity, out double evaluationTime, out _entrySOIdetected);
 
             if (hasData)
             {
@@ -143,6 +152,14 @@ class VelocityArrowDrawer_OnLocationChange_Patch
                 {
                     // We are far from target
 					_navState = E_NAV_MODE.ANAIS_TRANSFER_PLANNED;
+
+					if(_lastEvaluationTime != evaluationTime)
+					{
+                        _dataSmoother.Add(_relativeVelocity);
+						_lastEvaluationTime = evaluationTime;
+                    }
+					
+					_relativeVelocity = _dataSmoother.GetSmoothedData();
                 }
             }
         }
@@ -177,7 +194,9 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 			_textX_color.changeColor(DynamicColor.E_COLOR.LIGHT_BLUE);
 			_textX_color.changeBlinkingMode(DynamicColor.E_BLINKING_MODE.BLINKING_SMOOTH, 1.8f);
 			_textX_color.restartBlinkingProcess();
-		}
+
+            _dataSmoother.Clear();
+        }
 
 		if(newNavState == E_NAV_MODE.ANAIS_TRANSFER_PLANNED)
         {
