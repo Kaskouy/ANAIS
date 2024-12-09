@@ -3,6 +3,7 @@ using SFS.IO;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Permissions;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -69,10 +70,25 @@ public class NavigationVariables
     public bool _approachLinesPreferredDatesNeedReset = false;
 
     // target altitude related variables
-    public string _currentPlanetName = "";
-    public double _defaultTargetAltitude = 0.0;
+    // ---------------------------------
+
+    // to memorize the latest altitude chosen on the latest selected planet, so that if we deselect it and reselect it later, we still have the latest value entered
+    public string _previousPlanetName = "";
+    public double _previousAltitude = 0.0;
+
+    // flags to know what kind of object is targeted right now: none, planet, other (ship, astronaut...)
+    public bool _isTargetSelected = false;
+    public bool _isPlanetSelected = false;
+
+    // the maximum acceptable altitude (usually capped by the SOI)
     public double _maxTargetAltitude = 0.0;
+
+    // the current altitude chosen by the player
     public double _targetAltitude = 0.0;
+
+    // A custom altitude is an altitude that has been entered by the player while no target was selected. This flags indicates that _targetAltitude is a custom altitude.
+    // If a planet is selected with a custom altitude set, this custom altitude will be assumed in priority.
+    public bool _isCustomAltitude = false;
 
     public NavigationVariables()
     {

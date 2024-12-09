@@ -287,26 +287,43 @@ class ANAIS_Panel
             {
                 // entry is below acceptable minimum; force to lowest value
                 altitude = 0.0;
-                _textInput_target_altitude.Text = altitude.ToString(); // Warning: calls onTargetAltitudeChanged again
                 _NavVariables._targetAltitude = altitude;
+                _NavVariables._isCustomAltitude = false;
+                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(altitude); // Warning: calls onTargetAltitudeChanged again
             }
             else if (altitude > _NavVariables._maxTargetAltitude)
             {
                 // entry is beyond acceptable maximum; force to highest value
                 altitude = _NavVariables._maxTargetAltitude;
-                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(altitude); // Warning: calls onTargetAltitudeChanged again
                 _NavVariables._targetAltitude = altitude;
+                _NavVariables._isCustomAltitude = false;
+                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(altitude); // Warning: calls onTargetAltitudeChanged again
             }
             else
             {
                 // Correct entry: update internal variable
                 _NavVariables._targetAltitude = altitude;
+
+                if( _NavVariables._isTargetSelected == false )
+                {
+                    _NavVariables._isCustomAltitude = true;
+                }
+                else
+                {
+                    _NavVariables._isCustomAltitude = false;
+                }
+
+                if(_NavVariables._isPlanetSelected)
+                {
+                    _NavVariables._previousAltitude = altitude;
+                }
             }
         }
         else
         {
-            _textInput_target_altitude.Text = "0.0"; // Warning: calls onTargetAltitudeChanged again
             _NavVariables._targetAltitude = 0.0;
+            _NavVariables._isCustomAltitude = false;
+            _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(0.0);
         }
     }
 
@@ -320,38 +337,66 @@ class ANAIS_Panel
         if (targetMapPlanet != null) planet = targetMapPlanet.planet;
 
         // Update navigation data
-        if (planet == null)
+        if((target == null) || (planet == null))
         {
-            // No planet selected - default and max are reset, but the planet name and the current altitude are intentionally kept
-            // so that they are available again if the player selects the same planet again later.
-            _NavVariables._defaultTargetAltitude = 0.0;
-            _NavVariables._maxTargetAltitude = 0.0;
+            _NavVariables._isPlanetSelected = false;
 
-            if(_windowHolder != null) // avoids breaking the game when this function is called at start-up
+            if (target == null)
             {
+                // No target is selected - let the player enter whatever they want in the altitude field
+                _NavVariables._maxTargetAltitude = Double.PositiveInfinity;
+                _NavVariables._isTargetSelected = false;
+            }
+            else
+            {
+                // A target is selected but it's not a planet - force max altitude to 0 to disable the altitude field (only planets have an altitude)
+                _NavVariables._maxTargetAltitude = 0.0;
+                _NavVariables._isTargetSelected = true;
+            }
+
+            if (_windowHolder != null) // avoids breaking the game when this function is called at start-up
+            {
+                // Reset the altitude field to 0.0, but keep the value in memory in case the player reselects the same planet later.
                 double tmp_alt = _NavVariables._targetAltitude; // because setting _textInput_target_altitude.Text to "0.0" resets that variable...
-                _textInput_target_altitude.Text = "0.0";
+                _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(0.0);
                 _NavVariables._targetAltitude = tmp_alt;
             }
         }
         else
         {
-            // A planet is selected
-            _NavVariables._defaultTargetAltitude = planet.TimewarpRadius_Descend - planet.Radius;
+            // A planet is selected as target
+            _NavVariables._isTargetSelected = true;
+            _NavVariables._isPlanetSelected = true;
             _NavVariables._maxTargetAltitude = planet.SOI - planet.Radius;
 
-            if (planet.name != _NavVariables._currentPlanetName)
+            if(_NavVariables._isCustomAltitude)
+            {
+                // A custom altitude has been entered (altitude entered with no planet previously selected), use it in priority
+                if(_NavVariables._targetAltitude > _NavVariables._maxTargetAltitude) { _NavVariables._targetAltitude = _NavVariables._maxTargetAltitude; }
+            }
+            else if (planet.name == _NavVariables._previousPlanetName)
+            {
+                // Same planet as the previous selected one -> use the memorized altitude value
+                _NavVariables._targetAltitude = _NavVariables._previousAltitude;
+            }
+            else
             {
                 // The planet selected is different from before --> setting planet name and default altitude
-                _NavVariables._targetAltitude = _NavVariables._defaultTargetAltitude;
-                _NavVariables._currentPlanetName = planet.name;
+                _NavVariables._targetAltitude = planet.TimewarpRadius_Descend - planet.Radius;
             }
 
+            // Update panel
             if (_windowHolder != null) // avoids breaking the game when this function is called at start-up
             {
                 _textInput_target_altitude.Text = AltitudeFromGameUnitToPanelString(_NavVariables._targetAltitude);
             }
+
+            // Memorize the planet name and the latest known altitude for it
+            _NavVariables._previousPlanetName = planet.name;
+            _NavVariables._previousAltitude = _NavVariables._targetAltitude;
         }
+
+        _NavVariables._isCustomAltitude = false;
     }
 
 
