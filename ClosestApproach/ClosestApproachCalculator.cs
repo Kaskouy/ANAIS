@@ -795,19 +795,7 @@ public class ClosestApproachCalculator
 		}
 
 		// A minimum exists: calculate and returns it directly
-		double relativeSpeed = (approachData_start.locTarget.velocity - approachData_start.locPlayer.velocity).magnitude;
-		double distance = (approachData_start.locTarget.position - approachData_start.locPlayer.position).magnitude;
-
-		if ( (relativeSpeed <  20.0) && (distance < 2000.0)) 
-        {
-			// At close distance and low speed, we apply a single linear approximation
-			// (this is because very low speeds tend to make skip the calculation since the separation speed is practically null then)
-			return getApproachData_LinearMovementApproximation(orbit_A, orbit_B, approachData_start, approachData_end, true);
-		}
-        else 
-		{
-			return calculateMinimalApproachBetweenDates(orbit_A, orbit_B, approachData_start, approachData_end);
-		}
+		return calculateMinimalApproachBetweenDates(orbit_A, orbit_B, approachData_start, approachData_end);
 	}
 
 
@@ -874,9 +862,9 @@ public class ClosestApproachCalculator
 		const double PREFERRED_NB_TURNS_MULTIPLICATOR = 0.85;
 
 		// The number of turns from which we start calculating
-		const uint C_FIRST_TURN = 2;
+		const uint C_FIRST_TURN = 1;
 
-		double curStartTime = start_time + orbit_A.period; // to start after one period
+		double curStartTime = start_time /*+ orbit_A.period*/; // to start after one period
 		bool continueSearch = true;
 
 		for (uint i_turn = C_FIRST_TURN; continueSearch && (i_turn <= nbMaxTurns); i_turn++)
@@ -1121,6 +1109,9 @@ public class ClosestApproachCalculator
 			double startTimeForAccurateCalculation = bestApproachData.date - 0.4 * min_period;
 			double endTimeForAccurateCalculation = bestApproachData.date + 0.4 * min_period;
 
+			// Make sure we don't evaluate the best approach in the past...
+			if (startTimeForAccurateCalculation < start_time) startTimeForAccurateCalculation = start_time;
+
             T_ApproachData accurateBestApproachData = new T_ApproachData();
             accurateBestApproachData.validity = false;
             accurateBestApproachData.dist = Double.PositiveInfinity;
@@ -1129,7 +1120,9 @@ public class ClosestApproachCalculator
 
             if (accurateBestApproachData.validity)
             {
+                nbTurns = (uint)((accurateBestApproachData.date - start_time) / orbit_A.period) + 1; // recalculate this since it potentially changed
                 bestApproachData = accurateBestApproachData;
+                LOG(LOG_LEVEL.INFO, " Accurate closest approach calculated; nbTurns = " + nbTurns + "; distance = " + accurateBestApproachData.dist + "; delay = " + (accurateBestApproachData.date - start_time));
             }
         }
     }
