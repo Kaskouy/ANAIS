@@ -87,6 +87,7 @@
     <Compile Include="Astrodynamics\KeplerSolver.cs" />
     <Compile Include="Astrodynamics\LambertSolver.cs" />
     <Compile Include="SFS_Patches\MapNavigation_Patch.cs" />
+    <Compile Include="TransferCalculator\DataSmoother.cs" />
     <Compile Include="TransferCalculator\NumericalMinimumCalculator.cs" />
     <Compile Include="Astrodynamics\OrbitDrawer.cs" />
     <Compile Include="SFS_Patches\Orbit_Patch.cs" />

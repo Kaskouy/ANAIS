@@ -15,7 +15,7 @@ namespace ANAIS
         const string C_STR_MOD_NAME = "ANAIS";
         const string C_STR_AUTHOR = "Altaïr";
         const string C_STR_GAME_VERSION = "1.5.10.2";
-        const string C_STR_MOD_VERSION = "v1.4.0";
+        const string C_STR_MOD_VERSION = "v1.4.2";
         const string C_STR_MOD_DESCRIPTION = "Advanced NAvigation Innovative System\nReplaces the original navigation system with a more elaborated one.";
 
         private const string C_STR_CLOSEST_APPROACH_LINE_MOD_ID = "CLOSEST_APPROACH_LINE";
@@ -68,7 +68,7 @@ namespace ANAIS
             // NOTE: To enable the logs, under Visual right-click on the project ("ANAIS"), select Properties, then the "build" category,
             // then add ACTIVE_LOGS as a conditional compilation symbol. Remove it to disable all logs.
             // NOTE2: To customize the logs, see the AnaisLogger.cs file
-            //AnaisLogger.Init(debug: false, "C:\\Users\\JB\\Desktop\\Jeux\\SFS PC\\ANAIS\\Logs_ANAIS.txt");
+            AnaisLogger.Init(debug: false, "C:\\Users\\JB\\Desktop\\Jeux\\SFS PC\\ANAIS\\Logs_ANAIS.txt");
             //System.DateTime dateNow = DateTime.Now;
             //AnaisLogger.Init(debug: false, new FolderPath(ModFolder).ExtendToFile("Logs_ANAIS_" + dateNow.Day + dateNow.Month + dateNow.Year + "_" + dateNow.Hour + dateNow.Minute + dateNow.Second + ".txt"));
 
