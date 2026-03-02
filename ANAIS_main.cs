@@ -32,7 +32,7 @@ namespace ANAIS
 
         public override string Description => C_STR_MOD_DESCRIPTION;
 
-        public override string IconLink => "https://i.imgur.com/JDBeEJD.png"; // link to the logo
+        public override string IconLink => "https://raw.githubusercontent.com/RoshanGamer7791/SFSIcons/main/ANAIS.png"; // link to the logo
 
         // Set the dependencies
         public override Dictionary<string, string> Dependencies { get; } = new Dictionary<string, string> { { "UITools", "1.0" } };
