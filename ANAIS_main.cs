@@ -1,10 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-
-using SFS.IO;
+﻿using HarmonyLib;
 using ModLoader;
+using SFS.IO;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
 using UITools;
-using HarmonyLib;
+
 
 
 namespace ANAIS
@@ -14,8 +16,8 @@ namespace ANAIS
         const string C_STR_MOD_ID = "ANAIS";
         const string C_STR_MOD_NAME = "ANAIS";
         const string C_STR_AUTHOR = "Altaïr";
-        const string C_STR_GAME_VERSION = "1.5.10.2";
-        const string C_STR_MOD_VERSION = "v1.4.2";
+        const string C_STR_GAME_VERSION = "1.6.00.16";
+        const string C_STR_MOD_VERSION = "v1.4.3";
         const string C_STR_MOD_DESCRIPTION = "Advanced NAvigation Innovative System\nReplaces the original navigation system with a more elaborated one.";
 
         private const string C_STR_CLOSEST_APPROACH_LINE_MOD_ID = "CLOSEST_APPROACH_LINE";
@@ -32,7 +34,7 @@ namespace ANAIS
 
         public override string Description => C_STR_MOD_DESCRIPTION;
 
-        public override string IconLink => "https://i.imgur.com/JDBeEJD.png"; // link to the logo
+        public override string IconLink => "https://github.com/Kaskouy/ANAIS/blob/main/Resources/LogoANAIS.png?raw=true"; // link to the logo
 
         // Set the dependencies
         public override Dictionary<string, string> Dependencies { get; } = new Dictionary<string, string> { { "UITools", "1.0" } };
@@ -49,11 +51,11 @@ namespace ANAIS
         // This initializes the patcher. This is required if you use any Harmony patches
         public static Harmony patcher;
 
+
         public override void Load()
         {
             //UnityEngine.Debug.Log("Load called for ANAIS");
             // Tells the loader what to run when your mod is loaded
-
 
             // If closest approach line is active, this one or ANAIS must be disabled!
             if (ModsSettings.main.settings.modsActive.TryGetValue(C_STR_CLOSEST_APPROACH_LINE_MOD_ID, out bool closestApproachActive) && closestApproachActive)
@@ -65,12 +67,10 @@ namespace ANAIS
             ANAIS_Config.Init(new FolderPath(ModFolder).ExtendToFile("Config.txt"));
 
             // Initialize logs
-            // NOTE: To enable the logs, under Visual right-click on the project ("ANAIS"), select Properties, then the "build" category,
-            // then add ACTIVE_LOGS as a conditional compilation symbol. Remove it to disable all logs.
+            // NOTE: To enable the logs, set "debug" to true, and compile in Debug configuration. Logs are disabled in release.
+            // (logs activation is controlled by the ACTIVE_LOGS conditional compilation symbol - right-click on ANAIS, Properties, then "Build" panel)
             // NOTE2: To customize the logs, see the AnaisLogger.cs file
-            AnaisLogger.Init(debug: false, "C:\\Users\\JB\\Desktop\\Jeux\\SFS PC\\ANAIS\\Logs_ANAIS.txt");
-            //System.DateTime dateNow = DateTime.Now;
-            //AnaisLogger.Init(debug: false, new FolderPath(ModFolder).ExtendToFile("Logs_ANAIS_" + dateNow.Day + dateNow.Month + dateNow.Year + "_" + dateNow.Hour + dateNow.Minute + dateNow.Second + ".txt"));
+            AnaisLogger.Init(debug: true, new FolderPath(ModFolder).ExtendToFile("Logs_ANAIS.txt"));
 
             // Register scene changer events
             ModLoader.Helpers.SceneHelper.OnWorldSceneLoaded += new Action(AnaisManager.setWorldSceneActive);

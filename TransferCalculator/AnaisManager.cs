@@ -360,7 +360,7 @@ class AnaisManager
                     }
                 }
             }
-            catch (System.Threading.ThreadAbortException ex)
+            catch (System.Threading.ThreadAbortException)
             {
                 LOG(LOG_LEVEL.INFO, "Stopping ANAIS thread");
             }

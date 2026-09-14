@@ -343,7 +343,7 @@ class VelocityArrowDrawer_OnLocationChange_Patch
 			arrow.line.transform.parent.GetChild(0).gameObject.GetComponent<Image>().color = arrowColor; // Corresponds to Arrow X: tip of the arrow
 			arrow.line.transform.GetChild(1).gameObject.GetComponent<Image>().color = arrowColor; // Corresponds to Base X: origin of the arrow
 		}
-		catch (Exception e)
+		catch (Exception)
         {
 			LOG(LOG_LEVEL.ERROR, "Velocity arrows components could not be retrieved");
 		}

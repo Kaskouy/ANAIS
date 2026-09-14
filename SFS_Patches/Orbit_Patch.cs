@@ -8,6 +8,60 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 
+// Class Orbit_CustomData
+// ----------------------
+// A class that allows to store additional data and associate them to an orbit instance
+public class Orbit_CustomData
+{
+	public Orbit orbit;
+	public OrbitDrawer orbitDrawer;
+
+    public Orbit_CustomData(Orbit orbit)
+    {
+        orbitDrawer = null;
+        this.orbit = orbit;
+    }
+}
+
+
+// Class Orbit_CustomData_Association
+// ----------------------------------
+// This class maintains a table of association between all orbit instances and their associated data.
+// It also defines some methods to retrieve said data as if they were actual members of the orbit class
+// through the use of extension methods.
+static class Orbit_CustomData_Association
+{
+    private static ConditionalWeakTable<Orbit, Orbit_CustomData> orbitTable = new ConditionalWeakTable<Orbit, Orbit_CustomData>();
+
+    // Backup function that allows to recreate a set of associated data if an association appeared to be lost
+    // This is only used as a backup, it should never happen in practice.
+    private static Orbit_CustomData createCustomData(Orbit orbit)
+    {
+        LOG(LOG_LEVEL.WARNING, "createAdditionalData: orbit not found in ConditionalWeakTable; added automatically on the go!");
+        return new Orbit_CustomData(orbit);
+    }
+
+    // Function to add an entry in the table; only meant to be called by the Orbit constructor!
+    public static void addAdditionalData(this Orbit orbit)
+    {
+        orbitTable.Add(orbit, new Orbit_CustomData(orbit));
+    }
+
+    // Accessors to the orbit additional data
+    // --------------------------------------
+    public static OrbitDrawer getOrbitDrawer(this Orbit orbit)
+    {
+        return orbitTable.GetValue(orbit, createCustomData).orbitDrawer;
+    }
+
+    // Local log function
+    [Conditional("ACTIVE_LOGS")]
+    private static void LOG(LOG_LEVEL level, string message)
+    {
+        AnaisLogger.Log(LOG_CATEGORY.ORBIT, level, message);
+    }
+}
+
 
 [HarmonyPatch(typeof(Orbit), "TryCreateOrbit")]
 public class Orbit_TryCreateOrbit_Patch
@@ -158,6 +212,8 @@ public class Orbit_OrbitPatch
                 Traverse.Create(__instance).Method("FindEncounters", startWindow, endWindow).GetValue(startWindow, endWindow);
 			}
 		}
+
+        __instance.addAdditionalData();
     }
 
 	// Local log function
@@ -296,6 +352,8 @@ public class Orbit_OrbitConstructor2_Patch
             __instance.semiMinorAxis = specificEnergy; // HACK
 			__instance.meanMotion = angularMomentum;   // HACK
         }
+
+        __instance.addAdditionalData();
     }
 
 	// Local log function
@@ -493,7 +551,39 @@ public class Orbit_GetPoints_Patch
         if(__instance.direction != 0)
 		{
             // General case
-			return new OrbitDrawer(__instance).GetPoints(fromTrueAnomaly, toTrueAnomaly, resolution, scaleMultiplier);
+
+            // C_AREA_LOSS_TOLERANCE_FACTOR : The number of times the reference area we accept to lose on a segment.
+			// The "reference area" is the area between the conic arc and the segment joining two consecutive points of the trajectory.
+			// This is the area you might expect to lose when representing a circle as a polygon.
+			// If the area lost on a segment is more than this factor times the reference area, intermediate points will be added to fix it up.
+            // The lower, the better the quality. 
+            const double C_AREA_LOSS_TOLERANCE_FACTOR = 8.0; // 8.0 only adds a few points for very elongated ellipses - it's light and gives satisfying results.
+                                                             // 4.0 adds more points (up to +50% from my tests) for elongated ellipses. Good for more demanding players.
+                                                             // less than 4 adds even more points while only giving marginal gains.
+
+            // C_MAX_TESSELLATION_STEPS : the maximum number of steps of tessellation that will be made. Honestly, 3 is fine in all cases.
+            const uint C_MAX_TESSELLATION_STEPS = 3;
+
+			// My personal experiments for various settings
+            // LOW SETTING : resolution = 120; C_AREA_LOSS_TOLERANCE_FACTOR = 8.0; C_MAX_TESSELLATION_STEPS = 3;
+            // MEDIUM SETTING : resolution = 180; C_AREA_LOSS_TOLERANCE_FACTOR = 8.0; C_MAX_TESSELLATION_STEPS = 3;
+            // HIGH SETTING : resolution = 240; C_AREA_LOSS_TOLERANCE_FACTOR = 4.0; C_MAX_TESSELLATION_STEPS = 3;
+            // VERY HIGH SETTING : resolution = 360; C_AREA_LOSS_TOLERANCE_FACTOR = 4.0; C_MAX_TESSELLATION_STEPS = 3;
+
+            // Instanciation: this is designed to be built one time, and kept for future use to speed up the process.
+            /*OrbitDrawer orbitDrawer = new OrbitDrawer(__instance, resolution, scaleMultiplier, C_AREA_LOSS_TOLERANCE_FACTOR, C_MAX_TESSELLATION_STEPS);
+
+			return orbitDrawer.GetPoints(fromTrueAnomaly, toTrueAnomaly);*/
+
+
+			OrbitDrawer orbitDrawer = __instance.getOrbitDrawer();
+
+			if(orbitDrawer == null)
+			{
+                orbitDrawer = new OrbitDrawer(__instance, resolution, scaleMultiplier, C_AREA_LOSS_TOLERANCE_FACTOR, C_MAX_TESSELLATION_STEPS);
+            }
+
+            return orbitDrawer.GetPoints(fromTrueAnomaly, toTrueAnomaly);
         }
 		else
 		{

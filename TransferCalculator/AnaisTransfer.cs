@@ -19,6 +19,7 @@ class AnaisTransfer
     public Orbit destinationOrbit;
     public Planet targetPlanet;
     public double targetAltitude;
+    public uint nbTurns;
 
     // all calculated data
     public Orbit transferOrbit;
@@ -59,6 +60,7 @@ class AnaisTransfer
         destinationOrbit = _destinationOrbit;
         targetPlanet = _targetPlanet;
         targetAltitude = _targetAltitude;
+        nbTurns = 0;
 
         // init all the shit
         transferOrbit = null;
@@ -271,6 +273,47 @@ class AnaisTransfer
     }
 
 
+    Orbit selectBestTransfer(Double2 startVelocity, Double2 endVelocity, Orbit transfer1, Orbit transfer2)
+    {
+        // Deal with easy cases...
+        if (transfer1 == transfer2) return transfer1;
+        if (transfer1 == null) return transfer2;
+        if (transfer2 == null) return transfer1;
+
+        // if two different transfers are available, compare the delta-Vs
+        Location transfer_start1 = transfer1.GetLocation(departureTime);
+        Location transfer_start2 = transfer2.GetLocation(departureTime);
+
+        // compute the delta-V at start in both cases
+        double deltaV1 = (transfer_start1.velocity - startVelocity).magnitude;
+        double deltaV2 = (transfer_start2.velocity - startVelocity).magnitude;
+
+        if(transferType == ANAIS_Settings.E_TRANSFER_TYPE.RENDEZ_VOUS)
+        {
+            Location transfer_end1 = transfer1.GetLocation(arrivalTime);
+            Location transfer_end2 = transfer2.GetLocation(arrivalTime);
+
+            // compute delta-V at arrival in both cases if transfer type is "rendez-vous"
+            double deltaV1_end = (endVelocity - transfer_end1.velocity).magnitude;
+            double deltaV2_end = (endVelocity - transfer_end2.velocity).magnitude;
+
+            if(targetPlanet != null)
+            {
+                // take into account the planet's gravity if the player aims for a planet
+                deltaV1_end = calculateInsertionDeltaV(deltaV1_end);
+                deltaV2_end = calculateInsertionDeltaV(deltaV2_end);
+            }
+
+            deltaV1 += deltaV1_end;
+            deltaV2 += deltaV2_end;
+        }
+
+        // We choose the transfer that gives the smallest delta-V
+        if (deltaV1 < deltaV2) return transfer1;
+        else                   return transfer2;
+    }
+
+
     // --------------------------------------------------------------------------------------------
     //                             calculateTransferInSameSOI
     // --------------------------------------------------------------------------------------------
@@ -290,8 +333,24 @@ class AnaisTransfer
         Location playerLocation = originOrbit.GetLocation(departureTime);
         Location targetLocation = destinationOrbit.GetLocation(arrivalTime);
 
+        /*Orbit transferOrbit1 = null;
+        Orbit transferOrbit2 = null;
+
+        (transferOrbit1, transferOrbit2) = LambertSolver.CalculateTrajectory(originOrbit.Planet, playerLocation.position, targetLocation.position, departureTime, arrivalTime, nbTurns, originOrbit.direction);
+        */
+
+        // Algo evolution : comparer les deux transferts, et choisir celui donnant le plus petit dv (selon le critère requis)
+
+        // Pb: avec les transferts interplanétaires, on ne peut pas évaluer directement le dv de départ. On peut:
+        //  - se baser sur le dv trouvé pour le transfert principal (+: simple; -: approximatif, ne tient pas compte de l'effet Oberth)
+        //  - calculer la trajectoire d'éjection qui matcherait le vecteur vitesse (+: plus précis, résultat proche de la réalité dans des configurations à peu près conventionnelles; +/-: un peu plus complexe)
+
+
         // Calculate the transfer
-        transferOrbit = LambertSolver.CalculateTrajectory(originOrbit.Planet, playerLocation.position, targetLocation.position, departureTime, arrivalTime, originOrbit.direction);
+        (Orbit orbit1, Orbit orbit2) = LambertSolver.CalculateTrajectory(originOrbit.Planet, playerLocation.position, targetLocation.position, departureTime, arrivalTime, nbTurns, originOrbit.direction);
+
+        // Select the best transfer (only relevant for multi-turn transfers)
+        transferOrbit = selectBestTransfer(playerLocation.velocity, targetLocation.velocity, orbit1, orbit2);
 
         if (transferOrbit != null)
         {
@@ -311,8 +370,7 @@ class AnaisTransfer
 
             // Calculate deltaV and transfer efficiency at arrival
             double end_transfer_eff = 0.0;
-            bool noArrivalPlanet = false;
-            if ((targetPlanet == null) || noArrivalPlanet)
+            if (targetPlanet == null)
             {
                 // Target is punctual, the last data is what we need
                 deltaV_end = deltaV_end_main;
@@ -392,7 +450,7 @@ class AnaisTransfer
         Location childPlanetLocation = childPlanetOrbit.GetLocation(departureTime);
 
         // Calculate the transfer without taking into account the SOI, taking the planet position as the starting position
-        transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, childPlanetLocation.position, targetLocation.position, departureTime, arrivalTime, childPlanetOrbit.direction);
+        transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, childPlanetLocation.position, targetLocation.position, departureTime, arrivalTime, nbTurns, childPlanetOrbit.direction).orbit1;
 
         if(transferOrbit != null) // Calculate transfer efficiency like if it was a transfer performed in the main body's frame from the position of the child planet
         {
@@ -408,8 +466,7 @@ class AnaisTransfer
 
             // Calculate deltaV and transfer efficiency at arrival
             double end_transfer_eff = 0.0;
-            bool noArrivalPlanet = false;
-            if ((targetPlanet == null) || noArrivalPlanet)
+            if (targetPlanet == null)
             {
                 // Target is punctual, the last data is what we need
                 deltaV_end = deltaV_end_main;
@@ -538,7 +595,7 @@ class AnaisTransfer
 
             // Calculate the transfer in the main body's frame of reference from the newly calculated starting position
             //LOG(LOG_LEVEL.DEBUG, "    refineTransferCalculation: calculate main Lambert arc");
-            transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, startingPosition, targetLocation.position, exitTime, arrivalTime, childPlanetOrbit.direction);
+            transferOrbit = LambertSolver.CalculateTrajectory(parentPlanet, startingPosition, targetLocation.position, exitTime, arrivalTime, nbTurns, childPlanetOrbit.direction).orbit1;
 
             if(transferOrbit == null)
             {

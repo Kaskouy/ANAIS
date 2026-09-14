@@ -1,11 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Diagnostics;
-
-using HarmonyLib;
 
 
 public enum LOG_LEVEL
@@ -22,6 +17,7 @@ public enum LOG_CATEGORY
     LAMBERT_SOLVER,
     HOHMANN_TRANSFER,
     ORBIT,
+    ORBIT_DRAWER,
     VELOCITY_ARROW,
     MAP_NAVIGATION,
     CLOSEST_APPROACH,
@@ -41,7 +37,8 @@ class AnaisLogger
 
     private static readonly string[] STR_LOG_CATEGORY = { "LAMBERT_SOLVER", 
                                                           "HOHMANN_TRANSFER", 
-                                                          "ORBIT", 
+                                                          "ORBIT",
+                                                          "ORBIT_DRAWER",
                                                           "VELOCITY_ARROW",
                                                           "MAP_NAVIGATION",
                                                           "CLOSEST_APPROACH",
@@ -64,10 +61,10 @@ class AnaisLogger
 #if ACTIVE_LOGS
 
         // To specify the log file path...
-        Environment.SetEnvironmentVariable("HARMONY_LOG_FILE", fileLogPath);
+        //Environment.SetEnvironmentVariable("HARMONY_LOG_FILE", fileLogPath);
 
         HarmonyLib.Tools.HarmonyFileLog.FileWriterPath = fileLogPath;
-        HarmonyLib.Tools.HarmonyFileLog.Enabled = false; // instead of debug passed as parameter; setting it to true messes everything...
+        HarmonyLib.Tools.HarmonyFileLog.Enabled = debug; // instead of debug passed as parameter; setting it to true messes everything...
 
 
         // To make sure an entry exists for each category - No log by default
@@ -80,6 +77,7 @@ class AnaisLogger
         ListLogLevels[LOG_CATEGORY.LAMBERT_SOLVER]              = LOG_LEVEL.WARNING;
         ListLogLevels[LOG_CATEGORY.HOHMANN_TRANSFER]            = LOG_LEVEL.WARNING;
         ListLogLevels[LOG_CATEGORY.ORBIT]                       = LOG_LEVEL.WARNING;
+        ListLogLevels[LOG_CATEGORY.ORBIT_DRAWER]                = LOG_LEVEL.WARNING;
         ListLogLevels[LOG_CATEGORY.VELOCITY_ARROW]              = LOG_LEVEL.WARNING;
         ListLogLevels[LOG_CATEGORY.MAP_NAVIGATION]              = LOG_LEVEL.WARNING;
         ListLogLevels[LOG_CATEGORY.CLOSEST_APPROACH]            = LOG_LEVEL.WARNING;
@@ -109,7 +107,8 @@ class AnaisLogger
         {
             if ((level != LOG_LEVEL.NONE) && (level >= ListLogLevels[category]))
             {
-                FileLog.Log(STR_LOG_LEVEL[(int)level] + " " + STR_LOG_CATEGORY[(int)category] + " : " + message);
+                //FileLog.Log(STR_LOG_LEVEL[(int)level] + " " + STR_LOG_CATEGORY[(int)category] + " : " + message);
+                HarmonyLib.Tools.HarmonyFileLog.Writer?.WriteLine(STR_LOG_LEVEL[(int)level] + " " + STR_LOG_CATEGORY[(int)category] + " : " + message);
             }
         }
     }
